@@ -1,12 +1,20 @@
 # Python LDAP
 import ldap
+import awx
 
 # Django
 from django.utils.translation import ugettext_lazy as _
+from django.core.exceptions import ValidationError
 
 # Django Auth LDAP
 import django_auth_ldap.config
-from django_auth_ldap.config import LDAPSearch, LDAPSearchUnion
+from django_auth_ldap.config import (
+    LDAPSearch,
+    LDAPSearchUnion,
+)
+
+# This must be imported so get_subclasses picks it up
+from awx.sso.ldap_group_types import PosixUIDGroupType  # noqa
 
 # Tower
 from awx.conf import fields
@@ -23,6 +31,37 @@ def get_subclasses(cls):
         yield subclass
 
 
+def find_class_in_modules(class_name):
+    '''
+    Used to find ldap subclasses by string
+    '''
+    module_search_space = [django_auth_ldap.config, awx.sso.ldap_group_types]
+    for m in module_search_space:
+        cls = getattr(m, class_name, None)
+        if cls:
+            return cls
+    return None
+
+
+class DependsOnMixin():
+    def get_depends_on(self):
+        """
+        Get the value of the dependent field.
+        First try to find the value in the request.
+        Then fall back to the raw value from the setting in the DB.
+        """
+        from django.conf import settings
+        dependent_key = next(iter(self.depends_on))
+
+        if self.context:
+            request = self.context.get('request', None)
+            if request and request.data and \
+                    request.data.get(dependent_key, None):
+                return request.data.get(dependent_key)
+        res = settings._get_local(dependent_key, validate=False)
+        return res
+
+
 class AuthenticationBackendsField(fields.StringListField):
 
     # Mapping of settings that must be set in order to enable each
@@ -31,28 +70,43 @@ class AuthenticationBackendsField(fields.StringListField):
         ('awx.sso.backends.LDAPBackend', [
             'AUTH_LDAP_SERVER_URI',
         ]),
+        ('awx.sso.backends.LDAPBackend1', [
+            'AUTH_LDAP_1_SERVER_URI',
+        ]),
+        ('awx.sso.backends.LDAPBackend2', [
+            'AUTH_LDAP_2_SERVER_URI',
+        ]),
+        ('awx.sso.backends.LDAPBackend3', [
+            'AUTH_LDAP_3_SERVER_URI',
+        ]),
+        ('awx.sso.backends.LDAPBackend4', [
+            'AUTH_LDAP_4_SERVER_URI',
+        ]),
+        ('awx.sso.backends.LDAPBackend5', [
+            'AUTH_LDAP_5_SERVER_URI',
+        ]),
         ('awx.sso.backends.RADIUSBackend', [
             'RADIUS_SERVER',
         ]),
-        ('social.backends.google.GoogleOAuth2', [
+        ('social_core.backends.google.GoogleOAuth2', [
             'SOCIAL_AUTH_GOOGLE_OAUTH2_KEY',
             'SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET',
         ]),
-        ('social.backends.github.GithubOAuth2', [
+        ('social_core.backends.github.GithubOAuth2', [
             'SOCIAL_AUTH_GITHUB_KEY',
             'SOCIAL_AUTH_GITHUB_SECRET',
         ]),
-        ('social.backends.github.GithubOrganizationOAuth2', [
+        ('social_core.backends.github.GithubOrganizationOAuth2', [
             'SOCIAL_AUTH_GITHUB_ORG_KEY',
             'SOCIAL_AUTH_GITHUB_ORG_SECRET',
             'SOCIAL_AUTH_GITHUB_ORG_NAME',
         ]),
-        ('social.backends.github.GithubTeamOAuth2', [
+        ('social_core.backends.github.GithubTeamOAuth2', [
             'SOCIAL_AUTH_GITHUB_TEAM_KEY',
             'SOCIAL_AUTH_GITHUB_TEAM_SECRET',
             'SOCIAL_AUTH_GITHUB_TEAM_ID',
         ]),
-        ('social.backends.azuread.AzureADOAuth2', [
+        ('social_core.backends.azuread.AzureADOAuth2', [
             'SOCIAL_AUTH_AZUREAD_OAUTH2_KEY',
             'SOCIAL_AUTH_AZUREAD_OAUTH2_SECRET',
         ]),
@@ -70,6 +124,11 @@ class AuthenticationBackendsField(fields.StringListField):
 
     REQUIRED_BACKEND_FEATURE = {
         'awx.sso.backends.LDAPBackend': 'ldap',
+        'awx.sso.backends.LDAPBackend1': 'ldap',
+        'awx.sso.backends.LDAPBackend2': 'ldap',
+        'awx.sso.backends.LDAPBackend3': 'ldap',
+        'awx.sso.backends.LDAPBackend4': 'ldap',
+        'awx.sso.backends.LDAPBackend5': 'ldap',
         'awx.sso.backends.RADIUSBackend': 'enterprise_auth',
         'awx.sso.backends.SAMLAuth': 'enterprise_auth',
     }
@@ -101,7 +160,7 @@ class AuthenticationBackendsField(fields.StringListField):
             if not required_feature or feature_enabled(required_feature):
                 if all([getattr(settings, rs, None) for rs in required_settings]):
                     continue
-            backends = filter(lambda x: x != backend, backends)
+            backends = [x for x in backends if x != backend]
         return backends
 
 
@@ -109,6 +168,7 @@ class LDAPServerURIField(fields.URLField):
 
     def __init__(self, **kwargs):
         kwargs.setdefault('schemes', ('ldap', 'ldaps'))
+        kwargs.setdefault('allow_plain_hostname', True)
         super(LDAPServerURIField, self).__init__(**kwargs)
 
     def run_validators(self, value):
@@ -138,7 +198,8 @@ class LDAPConnectionOptionsField(fields.DictField):
         valid_options = dict([(v, k) for k, v in ldap.OPT_NAMES_DICT.items()])
         invalid_options = set(data.keys()) - set(valid_options.keys())
         if invalid_options:
-            options_display = json.dumps(list(invalid_options)).lstrip('[').rstrip(']')
+            invalid_options = sorted(list(invalid_options))
+            options_display = json.dumps(invalid_options).lstrip('[').rstrip(']')
             self.fail('invalid_options', invalid_options=options_display)
         # Convert named options to their integer constants.
         internal_data = {}
@@ -158,6 +219,18 @@ class LDAPDNField(fields.CharField):
         # django-auth-ldap expects DN fields (like AUTH_LDAP_REQUIRE_GROUP)
         # to be either a valid string or ``None`` (not an empty string)
         return None if value == '' else value
+
+
+class LDAPDNListField(fields.StringListField):
+
+    def __init__(self, **kwargs):
+        super(LDAPDNListField, self).__init__(**kwargs)
+        self.validators.append(lambda dn: list(map(validate_ldap_dn, dn)))
+
+    def run_validation(self, data=empty):
+        if not isinstance(data, (list, tuple)):
+            data = [data]
+        return super(LDAPDNListField, self).run_validation(data)
 
 
 class LDAPDNWithUserField(fields.CharField):
@@ -266,7 +339,7 @@ class LDAPSearchUnionField(fields.ListField):
         data = super(LDAPSearchUnionField, self).to_internal_value(data)
         if len(data) == 0:
             return None
-        if len(data) == 3 and isinstance(data[0], basestring):
+        if len(data) == 3 and isinstance(data[0], str):
             return self.ldap_search_field_class().run_validation(data)
         else:
             search_args = []
@@ -295,12 +368,13 @@ class LDAPUserAttrMapField(fields.DictField):
         data = super(LDAPUserAttrMapField, self).to_internal_value(data)
         invalid_attrs = (set(data.keys()) - self.valid_user_attrs)
         if invalid_attrs:
-            attrs_display = json.dumps(list(invalid_attrs)).lstrip('[').rstrip(']')
+            invalid_attrs = sorted(list(invalid_attrs))
+            attrs_display = json.dumps(invalid_attrs).lstrip('[').rstrip(']')
             self.fail('invalid_attrs', invalid_attrs=attrs_display)
         return data
 
 
-class LDAPGroupTypeField(fields.ChoiceField):
+class LDAPGroupTypeField(fields.ChoiceField, DependsOnMixin):
 
     default_error_messages = {
         'type_error': _('Expected an instance of LDAPGroupType but got {input_type} instead.'),
@@ -313,7 +387,7 @@ class LDAPGroupTypeField(fields.ChoiceField):
 
     def to_representation(self, value):
         if not value:
-            return ''
+            return 'MemberDNGroupType'
         if not isinstance(value, django_auth_ldap.config.LDAPGroupType):
             self.fail('type_error', input_type=type(value))
         return value.__class__.__name__
@@ -322,11 +396,48 @@ class LDAPGroupTypeField(fields.ChoiceField):
         data = super(LDAPGroupTypeField, self).to_internal_value(data)
         if not data:
             return None
-        if data.endswith('MemberDNGroupType'):
-            from django.conf import settings
-            return getattr(django_auth_ldap.config, data)(member_attr=settings.AUTH_LDAP_GROUP_TYPE_MEMBER_ATTR)
-        else:
-            return getattr(django_auth_ldap.config, data)()
+
+        params = self.get_depends_on() or {}
+        cls = find_class_in_modules(data)
+        if not cls:
+            return None
+
+        # Per-group type parameter validation and handling here
+
+        # Backwords compatability. Before AUTH_LDAP_GROUP_TYPE_PARAMS existed
+        # MemberDNGroupType was the only group type, of the underlying lib, that
+        # took a parameter.
+        params_sanitized = dict()
+        for attr in inspect.getargspec(cls.__init__).args[1:]:
+            if attr in params:
+                params_sanitized[attr] = params[attr]
+
+        return cls(**params_sanitized)
+
+
+class LDAPGroupTypeParamsField(fields.DictField, DependsOnMixin):
+    default_error_messages = {
+        'invalid_keys': _('Invalid key(s): {invalid_keys}.'),
+    }
+
+    def to_internal_value(self, value):
+        value = super(LDAPGroupTypeParamsField, self).to_internal_value(value)
+        if not value:
+            return value
+        group_type_str = self.get_depends_on()
+        group_type_str = group_type_str or ''
+
+        group_type_cls = find_class_in_modules(group_type_str)
+        if not group_type_cls:
+            # Fail safe
+            return {}
+
+        invalid_keys = set(value.keys()) - set(inspect.getargspec(group_type_cls.__init__).args[1:])
+        if invalid_keys:
+            invalid_keys = sorted(list(invalid_keys))
+            keys_display = json.dumps(invalid_keys).lstrip('[').rstrip(']')
+            self.fail('invalid_keys', invalid_keys=keys_display)
+        return value
 
 
 class LDAPUserFlagsField(fields.DictField):
@@ -335,7 +446,7 @@ class LDAPUserFlagsField(fields.DictField):
         'invalid_flag': _('Invalid user flag: "{invalid_flag}".'),
     }
     valid_user_flags = {'is_superuser', 'is_system_auditor'}
-    child = LDAPDNField()
+    child = LDAPDNListField()
 
     def to_internal_value(self, data):
         data = super(LDAPUserFlagsField, self).to_internal_value(data)
@@ -345,40 +456,9 @@ class LDAPUserFlagsField(fields.DictField):
         return data
 
 
-class LDAPDNMapField(fields.ListField):
+class LDAPDNMapField(fields.StringListBooleanField):
 
-    default_error_messages = {
-        'type_error': _('Expected None, True, False, a string or list of strings but got {input_type} instead.'),
-    }
     child = LDAPDNField()
-
-    def to_representation(self, value):
-        if isinstance(value, (list, tuple)):
-            return super(LDAPDNMapField, self).to_representation(value)
-        elif value in fields.NullBooleanField.TRUE_VALUES:
-            return True
-        elif value in fields.NullBooleanField.FALSE_VALUES:
-            return False
-        elif value in fields.NullBooleanField.NULL_VALUES:
-            return None
-        elif isinstance(value, basestring):
-            return self.child.to_representation(value)
-        else:
-            self.fail('type_error', input_type=type(value))
-
-    def to_internal_value(self, data):
-        if isinstance(data, (list, tuple)):
-            return super(LDAPDNMapField, self).to_internal_value(data)
-        elif data in fields.NullBooleanField.TRUE_VALUES:
-            return True
-        elif data in fields.NullBooleanField.FALSE_VALUES:
-            return False
-        elif data in fields.NullBooleanField.NULL_VALUES:
-            return None
-        elif isinstance(data, basestring):
-            return self.child.run_validation(data)
-        else:
-            self.fail('type_error', input_type=type(data))
 
 
 class BaseDictWithChildField(fields.DictField):
@@ -414,13 +494,16 @@ class BaseDictWithChildField(fields.DictField):
                 continue
             elif key not in data:
                 missing_keys.add(key)
+        missing_keys = sorted(list(missing_keys))
         if missing_keys and (data or not self.allow_blank):
-            keys_display = json.dumps(list(missing_keys)).lstrip('[').rstrip(']')
+            missing_keys = sorted(list(missing_keys))
+            keys_display = json.dumps(missing_keys).lstrip('[').rstrip(']')
             self.fail('missing_keys', missing_keys=keys_display)
         if not self.allow_unknown_keys:
             invalid_keys = set(data.keys()) - set(self.child_fields.keys())
             if invalid_keys:
-                keys_display = json.dumps(list(invalid_keys)).lstrip('[').rstrip(']')
+                invalid_keys = sorted(list(invalid_keys))
+                keys_display = json.dumps(invalid_keys).lstrip('[').rstrip(']')
                 self.fail('invalid_keys', invalid_keys=keys_display)
         for k, v in data.items():
             child_field = self.child_fields.get(k, None)
@@ -465,21 +548,6 @@ class LDAPSingleTeamMapField(BaseDictWithChildField):
 class LDAPTeamMapField(fields.DictField):
 
     child = LDAPSingleTeamMapField()
-
-
-class RADIUSSecretField(fields.CharField):
-
-    def run_validation(self, data=empty):
-        value = super(RADIUSSecretField, self).run_validation(data)
-        if isinstance(value, unicode):
-            value = value.encode('utf-8')
-        return value
-
-    def to_internal_value(self, value):
-        value = super(RADIUSSecretField, self).to_internal_value(value)
-        if isinstance(value, unicode):
-            value = value.encode('utf-8')
-        return value
 
 
 class SocialMapStringRegexField(fields.CharField):
@@ -528,7 +596,7 @@ class SocialMapField(fields.ListField):
             return False
         elif value in fields.NullBooleanField.NULL_VALUES:
             return None
-        elif isinstance(value, (basestring, type(re.compile('')))):
+        elif isinstance(value, (str, type(re.compile('')))):
             return self.child.to_representation(value)
         else:
             self.fail('type_error', input_type=type(value))
@@ -542,7 +610,7 @@ class SocialMapField(fields.ListField):
             return False
         elif data in fields.NullBooleanField.NULL_VALUES:
             return None
-        elif isinstance(data, basestring):
+        elif isinstance(data, str):
             return self.child.run_validation(data)
         else:
             self.fail('type_error', input_type=type(data))
@@ -611,7 +679,8 @@ class SAMLOrgInfoField(fields.DictField):
             if not re.match(r'^[a-z]{2}(?:-[a-z]{2})??$', key, re.I):
                 invalid_keys.add(key)
         if invalid_keys:
-            keys_display = json.dumps(list(invalid_keys)).lstrip('[').rstrip(']')
+            invalid_keys = sorted(list(invalid_keys))
+            keys_display = json.dumps(invalid_keys).lstrip('[').rstrip(']')
             self.fail('invalid_lang_code', invalid_lang_codes=keys_display)
         return data
 
@@ -649,3 +718,55 @@ class SAMLIdPField(BaseDictWithChildField):
 class SAMLEnabledIdPsField(fields.DictField):
 
     child = SAMLIdPField()
+
+
+class SAMLSecurityField(BaseDictWithChildField):
+
+    child_fields = {
+        'nameIdEncrypted': fields.BooleanField(required=False),
+        'authnRequestsSigned': fields.BooleanField(required=False),
+        'logoutRequestSigned': fields.BooleanField(required=False),
+        'logoutResponseSigned': fields.BooleanField(required=False),
+        'signMetadata': fields.BooleanField(required=False),
+        'wantMessagesSigned': fields.BooleanField(required=False),
+        'wantAssertionsSigned': fields.BooleanField(required=False),
+        'wantAssertionsEncrypted': fields.BooleanField(required=False),
+        'wantNameId': fields.BooleanField(required=False),
+        'wantNameIdEncrypted': fields.BooleanField(required=False),
+        'wantAttributeStatement': fields.BooleanField(required=False),
+        'requestedAuthnContext': fields.StringListBooleanField(required=False),
+        'requestedAuthnContextComparison': fields.CharField(required=False),
+        'metadataValidUntil': fields.CharField(allow_null=True, required=False),
+        'metadataCacheDuration': fields.CharField(allow_null=True, required=False),
+        'signatureAlgorithm': fields.CharField(allow_null=True, required=False),
+        'digestAlgorithm': fields.CharField(allow_null=True, required=False),
+    }
+    allow_unknown_keys = True
+
+
+class SAMLOrgAttrField(BaseDictWithChildField):
+
+    child_fields = {
+        'remove': fields.BooleanField(required=False),
+        'saml_attr': fields.CharField(required=False, allow_null=True),
+        'remove_admins': fields.BooleanField(required=False),
+        'saml_admin_attr': fields.CharField(required=False, allow_null=True),
+    }
+
+
+class SAMLTeamAttrTeamOrgMapField(BaseDictWithChildField):
+
+    child_fields = {
+        'team': fields.CharField(required=True, allow_null=False),
+        'organization': fields.CharField(required=True, allow_null=False),
+    }
+
+
+class SAMLTeamAttrField(BaseDictWithChildField):
+
+    child_fields = {
+        'team_org_map': fields.ListField(required=False, child=SAMLTeamAttrTeamOrgMapField(), allow_null=True),
+        'remove': fields.BooleanField(required=False),
+        'saml_attr': fields.CharField(required=False, allow_null=True),
+    }
+

@@ -37,6 +37,7 @@ function(i18n) {
                                " set by the inventory sync process.") +
                         "</p>",
                     dataTitle: i18n._('Host Enabled'),
+                    dataPlacement: "right",
                     ngDisabled: '!host.summary_fields.user_capabilities.edit || host.has_inventory_sources || isSmartInvHost'
                 }
             },
@@ -122,6 +123,11 @@ function(i18n) {
                     title: i18n._('Insights'),
                     skipGenerator: true,
                     ngIf: "host.insights_system_id!==null && host.summary_fields.inventory.hasOwnProperty('insights_credential_id')"
+                },
+                completed_jobs: {
+                    name: 'completed_jobs',
+                    title: i18n._('Completed Jobs'),
+                    skipGenerator: true
                 }
             }
         };

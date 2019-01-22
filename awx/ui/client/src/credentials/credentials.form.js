@@ -150,7 +150,7 @@ export default ['i18n', function(i18n) {
                 "subscription": {
                     label: i18n._("Subscription ID"),
                     type: 'text',
-                    ngShow: "kind.value == 'azure' || kind.value == 'azure_rm'",
+                    ngShow: "kind.value == 'azure_rm'",
                     awRequiredWhen: {
                         reqExpression: 'subscription_required',
                         init: false
@@ -169,7 +169,7 @@ export default ['i18n', function(i18n) {
                     labelBind: 'usernameLabel',
                     type: 'text',
                     ngShow: "kind.value && kind.value !== 'aws' && " +
-                            "kind.value !== 'gce' && kind.value!=='azure'",
+                            "kind.value !== 'gce'",
                     awRequiredWhen: {
                         reqExpression: 'username_required',
                         init: false
@@ -241,7 +241,7 @@ export default ['i18n', function(i18n) {
                     labelBind: 'sshKeyDataLabel',
                     type: 'textarea',
                     ngShow: "kind.value == 'ssh' || kind.value == 'scm' || " +
-                            "kind.value == 'gce' || kind.value == 'azure' || kind.value == 'net'",
+                            "kind.value == 'gce' || kind.value == 'net'",
                     awRequiredWhen: {
                         reqExpression: 'key_required',
                         init: true
@@ -442,11 +442,12 @@ export default ['i18n', function(i18n) {
                     open: false,
                     actions: {
                         add: {
+                            mode: 'all',
                             ngClick: "$state.go('.add')",
                             label: 'Add',
                             awToolTip: i18n._('Add a permission'),
-                            actionClass: 'btn List-buttonSubmit',
-                            buttonContent: '&#43; ' + i18n._('ADD'),
+                            actionClass: 'at-Button--add',
+                            actionId: 'button-add',
                             ngShow: '(credential_obj.summary_fields.user_capabilities.edit || canAdd)'
                         }
                     },
@@ -455,19 +456,19 @@ export default ['i18n', function(i18n) {
                             key: true,
                             label: i18n._('User'),
                             linkBase: 'users',
-                            class: 'col-lg-3 col-md-3 col-sm-3 col-xs-4'
+                            columnClass: 'col-sm-3 col-xs-4'
                         },
                         role: {
                             label: i18n._('Role'),
                             type: 'role',
                             nosort: true,
-                            class: 'col-lg-4 col-md-4 col-sm-4 col-xs-4'
+                            columnClass: 'col-sm-4 col-xs-4'
                         },
                         team_roles: {
                             label: i18n._('Team Roles'),
                             type: 'team_roles',
                             nosort: true,
-                            class: 'col-lg-5 col-md-5 col-sm-5 col-xs-4'
+                            columnClass: 'col-sm-5 col-xs-4'
                         }
                     }
                 }

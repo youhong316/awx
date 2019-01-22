@@ -6,7 +6,13 @@ from __future__ import unicode_literals
 from psycopg2.extensions import AsIs
 
 # Django
-from django.db import migrations, models
+from django.db import (
+    connection,
+    migrations,
+    models,
+    OperationalError,
+    ProgrammingError
+)
 from django.conf import settings
 import taggit.managers
 
@@ -15,11 +21,23 @@ import awx.main.fields
 from awx.main.models import Host
 
 
+def replaces():
+    squashed = ['0005a_squashed_v310_v313_updates', '0005b_squashed_v310_v313_updates']
+    try:
+        recorder = migrations.recorder.MigrationRecorder(connection)
+        result = recorder.migration_qs.filter(app='main').filter(name__in=squashed).all()
+        return [('main', m.name) for m in result]
+    except (OperationalError, ProgrammingError):
+        return []
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
         ('main', '0005_squashed_v310_v313_updates'),
     ]
+
+    replaces = replaces()
 
     operations = [
         # Release UJT unique_together constraint
@@ -54,7 +72,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='inventory',
             name='kind',
-            field=models.CharField(default=b'', help_text='Kind of inventory being represented.', max_length=32, blank=True, choices=[(b'', 'Hosts have a direct link to this inventory.'), (b'smart', 'Hosts for inventory generated using the host_filter property.')]),
+            field=models.CharField(default='', help_text='Kind of inventory being represented.', max_length=32, blank=True, choices=[('', 'Hosts have a direct link to this inventory.'), ('smart', 'Hosts for inventory generated using the host_filter property.')]),
         ),
         migrations.CreateModel(
             name='SmartInventoryMembership',
@@ -125,7 +143,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='inventorysource',
             name='scm_last_revision',
-            field=models.CharField(default=b'', max_length=1024, editable=False, blank=True),
+            field=models.CharField(default='', max_length=1024, editable=False, blank=True),
         ),
         migrations.AddField(
             model_name='inventorysource',
@@ -145,27 +163,27 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='inventorysource',
             name='source',
-            field=models.CharField(default=b'', max_length=32, blank=True, choices=[(b'', 'Manual'), (b'file', 'File, Directory or Script'), (b'scm', 'Sourced from a Project'), (b'ec2', 'Amazon EC2'), (b'gce', 'Google Compute Engine'), (b'azure', 'Microsoft Azure Classic (deprecated)'), (b'azure_rm', 'Microsoft Azure Resource Manager'), (b'vmware', 'VMware vCenter'), (b'satellite6', 'Red Hat Satellite 6'), (b'cloudforms', 'Red Hat CloudForms'), (b'openstack', 'OpenStack'), (b'custom', 'Custom Script')]),
+            field=models.CharField(default='', max_length=32, blank=True, choices=[('', 'Manual'), ('file', 'File, Directory or Script'), ('scm', 'Sourced from a Project'), ('ec2', 'Amazon EC2'), ('gce', 'Google Compute Engine'), ('azure_rm', 'Microsoft Azure Resource Manager'), ('vmware', 'VMware vCenter'), ('satellite6', 'Red Hat Satellite 6'), ('cloudforms', 'Red Hat CloudForms'), ('openstack', 'OpenStack'), ('custom', 'Custom Script')]),
         ),
         migrations.AlterField(
             model_name='inventoryupdate',
             name='source',
-            field=models.CharField(default=b'', max_length=32, blank=True, choices=[(b'', 'Manual'), (b'file', 'File, Directory or Script'), (b'scm', 'Sourced from a Project'), (b'ec2', 'Amazon EC2'), (b'gce', 'Google Compute Engine'), (b'azure', 'Microsoft Azure Classic (deprecated)'), (b'azure_rm', 'Microsoft Azure Resource Manager'), (b'vmware', 'VMware vCenter'), (b'satellite6', 'Red Hat Satellite 6'), (b'cloudforms', 'Red Hat CloudForms'), (b'openstack', 'OpenStack'), (b'custom', 'Custom Script')]),
+            field=models.CharField(default='', max_length=32, blank=True, choices=[('', 'Manual'), ('file', 'File, Directory or Script'), ('scm', 'Sourced from a Project'), ('ec2', 'Amazon EC2'), ('gce', 'Google Compute Engine'), ('azure_rm', 'Microsoft Azure Resource Manager'), ('vmware', 'VMware vCenter'), ('satellite6', 'Red Hat Satellite 6'), ('cloudforms', 'Red Hat CloudForms'), ('openstack', 'OpenStack'), ('custom', 'Custom Script')]),
         ),
         migrations.AlterField(
             model_name='inventorysource',
             name='source_path',
-            field=models.CharField(default=b'', max_length=1024, blank=True),
+            field=models.CharField(default='', max_length=1024, blank=True),
         ),
         migrations.AlterField(
             model_name='inventoryupdate',
             name='source_path',
-            field=models.CharField(default=b'', max_length=1024, blank=True),
+            field=models.CharField(default='', max_length=1024, blank=True),
         ),
         migrations.AlterField(
             model_name='unifiedjob',
             name='launch_type',
-            field=models.CharField(default=b'manual', max_length=20, editable=False, choices=[(b'manual', 'Manual'), (b'relaunch', 'Relaunch'), (b'callback', 'Callback'), (b'scheduled', 'Scheduled'), (b'dependency', 'Dependency'), (b'workflow', 'Workflow'), (b'sync', 'Sync'), (b'scm', 'SCM Update')]),
+            field=models.CharField(default='manual', max_length=20, editable=False, choices=[('manual', 'Manual'), ('relaunch', 'Relaunch'), ('callback', 'Callback'), ('scheduled', 'Scheduled'), ('dependency', 'Dependency'), ('workflow', 'Workflow'), ('sync', 'Sync'), ('scm', 'SCM Update')]),
         ),
         migrations.AddField(
             model_name='inventorysource',
@@ -193,12 +211,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='inventorysource',
             name='verbosity',
-            field=models.PositiveIntegerField(default=1, blank=True, choices=[(0, b'0 (WARNING)'), (1, b'1 (INFO)'), (2, b'2 (DEBUG)')]),
+            field=models.PositiveIntegerField(default=1, blank=True, choices=[(0, '0 (WARNING)'), (1, '1 (INFO)'), (2, '2 (DEBUG)')]),
         ),
         migrations.AddField(
             model_name='inventoryupdate',
             name='verbosity',
-            field=models.PositiveIntegerField(default=1, blank=True, choices=[(0, b'0 (WARNING)'), (1, b'1 (INFO)'), (2, b'2 (DEBUG)')]),
+            field=models.PositiveIntegerField(default=1, blank=True, choices=[(0, '0 (WARNING)'), (1, '1 (INFO)'), (2, '2 (DEBUG)')]),
         ),
 
         # Job Templates
@@ -299,7 +317,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='inventory',
             name='kind',
-            field=models.CharField(default=b'', help_text='Kind of inventory being represented.', max_length=32, blank=True, choices=[(b'', 'Hosts have a direct link to this inventory.'), (b'smart', 'Hosts for inventory generated using the host_filter property.')]),
+            field=models.CharField(default='', help_text='Kind of inventory being represented.', max_length=32, blank=True, choices=[('', 'Hosts have a direct link to this inventory.'), ('smart', 'Hosts for inventory generated using the host_filter property.')]),
         ),
 
         # Timeout help text update
@@ -360,9 +378,9 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('created', models.DateTimeField(default=None, editable=False)),
                 ('modified', models.DateTimeField(default=None, editable=False)),
-                ('description', models.TextField(default=b'', blank=True)),
+                ('description', models.TextField(default='', blank=True)),
                 ('name', models.CharField(max_length=512)),
-                ('kind', models.CharField(max_length=32, choices=[(b'ssh', 'Machine'), (b'vault', 'Vault'), (b'net', 'Network'), (b'scm', 'Source Control'), (b'cloud', 'Cloud'), (b'insights', 'Insights')])),
+                ('kind', models.CharField(max_length=32, choices=[('ssh', 'Machine'), ('vault', 'Vault'), ('net', 'Network'), ('scm', 'Source Control'), ('cloud', 'Cloud'), ('insights', 'Insights')])),
                 ('managed_by_tower', models.BooleanField(default=False, editable=False)),
                 ('inputs', awx.main.fields.CredentialTypeInputField(default={}, blank=True, help_text='Enter inputs using either JSON or YAML syntax. Use the radio button to toggle between the two. Refer to the Ansible Tower documentation for example syntax.')),
                 ('injectors', awx.main.fields.CredentialTypeInjectorField(default={}, blank=True, help_text='Enter injectors using either JSON or YAML syntax. Use the radio button to toggle between the two. Refer to the Ansible Tower documentation for example syntax.')),
@@ -417,7 +435,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='credential',
             name='become_method',
-            field=models.CharField(default=b'', help_text='Privilege escalation method.', max_length=32, blank=True, choices=[(b'', 'None'), (b'sudo', 'Sudo'), (b'su', 'Su'), (b'pbrun', 'Pbrun'), (b'pfexec', 'Pfexec'), (b'dzdo', 'DZDO'), (b'pmrun', 'Pmrun'), (b'runas', 'Runas')]),
+            field=models.CharField(default='', help_text='Privilege escalation method.', max_length=32, blank=True, choices=[('', 'None'), ('sudo', 'Sudo'), ('su', 'Su'), ('pbrun', 'Pbrun'), ('pfexec', 'Pfexec'), ('dzdo', 'DZDO'), ('pmrun', 'Pmrun'), ('runas', 'Runas')]),
         ),
 
         # Connecting activity stream
@@ -466,7 +484,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='instance',
             name='last_isolated_check',
-            field=models.DateTimeField(auto_now_add=True, null=True),
+            field=models.DateTimeField(editable=False, null=True),
         ),
         # Migrations that don't change db schema but simply to make Django ORM happy.
         # e.g. Choice updates, help_text updates, etc.
@@ -478,6 +496,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='unifiedjob',
             name='execution_node',
-            field=models.TextField(default=b'', help_text='The node the job executed on.', editable=False, blank=True),
+            field=models.TextField(default='', help_text='The node the job executed on.', editable=False, blank=True),
         ),
     ]

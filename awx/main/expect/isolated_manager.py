@@ -1,7 +1,5 @@
 import base64
-import cStringIO
 import codecs
-import StringIO
 import json
 import os
 import shutil
@@ -9,12 +7,15 @@ import stat
 import tempfile
 import time
 import logging
+from distutils.version import LooseVersion as Version
+from io import StringIO
 
 from django.conf import settings
+from django.utils.encoding import smart_bytes, smart_str
 
 import awx
 from awx.main.expect import run
-from awx.main.utils import OutputEventFilter
+from awx.main.utils import OutputEventFilter, get_system_task_capacity
 from awx.main.queue import CallbackQueueDispatcher
 
 logger = logging.getLogger('awx.isolated.manager')
@@ -38,7 +39,7 @@ class IsolatedManager(object):
         :param stdout_handle:       a file-like object for capturing stdout
         :param ssh_key_path:        a filepath where SSH key data can be read
         :param expect_passwords:    a dict of regular expression password prompts
-                                    to input values, i.e., {r'Password:\s*?$':
+                                    to input values, i.e., {r'Password:*?$':
                                     'some_password'}
         :param cancelled_callback:  a callable - which returns `True` or `False`
                                     - signifying if the job has been prematurely
@@ -101,6 +102,8 @@ class IsolatedManager(object):
         ]
         if extra_vars:
             args.extend(['-e', json.dumps(extra_vars)])
+        if settings.AWX_ISOLATED_VERBOSITY:
+            args.append('-%s' % ('v' * min(5, settings.AWX_ISOLATED_VERBOSITY)))
         return args
 
     @staticmethod
@@ -117,10 +120,10 @@ class IsolatedManager(object):
 
     @classmethod
     def awx_playbook_path(cls):
-        return os.path.join(
+        return os.path.abspath(os.path.join(
             os.path.dirname(awx.__file__),
             'playbooks'
-        )
+        ))
 
     def path_to(self, *args):
         return os.path.join(self.private_data_dir, *args)
@@ -142,7 +145,7 @@ class IsolatedManager(object):
 
         # if an ssh private key fifo exists, read its contents and delete it
         if self.ssh_key_path:
-            buff = cStringIO.StringIO()
+            buff = StringIO()
             with open(self.ssh_key_path, 'r') as fifo:
                 for line in fifo:
                     buff.write(line)
@@ -154,7 +157,10 @@ class IsolatedManager(object):
         # into a variable, and will replicate the data into a named pipe on the
         # isolated instance
         secrets_path = os.path.join(self.private_data_dir, 'env')
-        run.open_fifo_write(secrets_path, base64.b64encode(json.dumps(secrets)))
+        run.open_fifo_write(
+            secrets_path,
+            smart_str(base64.b64encode(smart_bytes(json.dumps(secrets))))
+        )
 
         self.build_isolated_job_data()
 
@@ -174,7 +180,7 @@ class IsolatedManager(object):
         args = self._build_args('run_isolated.yml', '%s,' % self.host, extra_vars)
         if self.instance.verbosity:
             args.append('-%s' % ('v' * min(5, self.instance.verbosity)))
-        buff = StringIO.StringIO()
+        buff = StringIO()
         logger.debug('Starting job {} on isolated host with `run_isolated.yml` playbook.'.format(self.instance.id))
         status, rc = IsolatedManager.run_pexpect(
             args, self.awx_playbook_path(), self.management_env, buff,
@@ -182,7 +188,7 @@ class IsolatedManager(object):
             job_timeout=settings.AWX_ISOLATED_LAUNCH_TIMEOUT,
             pexpect_timeout=5
         )
-        output = buff.getvalue()
+        output = buff.getvalue().encode('utf-8')
         playbook_logger.info('Isolated job {} dispatch:\n{}'.format(self.instance.id, output))
         if status != 'successful':
             self.stdout_handle.write(output)
@@ -244,7 +250,7 @@ class IsolatedManager(object):
         os.makedirs(self.path_to('artifacts', 'job_events'), mode=stat.S_IXUSR + stat.S_IWUSR + stat.S_IRUSR)
 
     def _missing_artifacts(self, path_list, output):
-        missing_artifacts = filter(lambda path: not os.path.exists(path), path_list)
+        missing_artifacts = list(filter(lambda path: not os.path.exists(path), path_list))
         for path in missing_artifacts:
             self.stdout_handle.write('ansible did not exit cleanly, missing `{}`.\n'.format(path))
         if missing_artifacts:
@@ -282,7 +288,7 @@ class IsolatedManager(object):
         status = 'failed'
         output = ''
         rc = None
-        buff = cStringIO.StringIO()
+        buff = StringIO()
         last_check = time.time()
         seek = 0
         job_timeout = remaining = self.job_timeout
@@ -303,7 +309,7 @@ class IsolatedManager(object):
                 time.sleep(1)
                 continue
 
-            buff = cStringIO.StringIO()
+            buff = StringIO()
             logger.debug('Checking on isolated job {} with `check_isolated.yml`.'.format(self.instance.id))
             status, rc = IsolatedManager.run_pexpect(
                 args, self.awx_playbook_path(), self.management_env, buff,
@@ -313,7 +319,7 @@ class IsolatedManager(object):
                 pexpect_timeout=5,
                 proot_cmd=self.proot_cmd
             )
-            output = buff.getvalue()
+            output = buff.getvalue().encode('utf-8')
             playbook_logger.info('Isolated job {} check:\n{}'.format(self.instance.id, output))
 
             path = self.path_to('artifacts', 'stdout')
@@ -340,7 +346,7 @@ class IsolatedManager(object):
         elif status == 'failed':
             # if we were unable to retrieve job reults from the isolated host,
             # print stdout of the `check_isolated.yml` playbook for clues
-            self.stdout_handle.write(output)
+            self.stdout_handle.write(smart_str(output))
 
         return status, rc
 
@@ -355,14 +361,14 @@ class IsolatedManager(object):
         }
         args = self._build_args('clean_isolated.yml', '%s,' % self.host, extra_vars)
         logger.debug('Cleaning up job {} on isolated host with `clean_isolated.yml` playbook.'.format(self.instance.id))
-        buff = cStringIO.StringIO()
+        buff = StringIO()
         timeout = max(60, 2 * settings.AWX_ISOLATED_CONNECTION_TIMEOUT)
         status, rc = IsolatedManager.run_pexpect(
             args, self.awx_playbook_path(), self.management_env, buff,
             idle_timeout=timeout, job_timeout=timeout,
             pexpect_timeout=5
         )
-        output = buff.getvalue()
+        output = buff.getvalue().encode('utf-8')
         playbook_logger.info('Isolated job {} cleanup:\n{}'.format(self.instance.id, output))
 
         if status != 'successful':
@@ -370,7 +376,28 @@ class IsolatedManager(object):
             logger.warning('Isolated job {} cleanup error, output:\n{}'.format(self.instance.id, output))
 
     @classmethod
-    def health_check(cls, instance_qs):
+    def update_capacity(cls, instance, task_result, awx_application_version):
+        instance.version = task_result['version']
+
+        isolated_version = instance.version.split("-", 1)[0]
+        cluster_version = awx_application_version.split("-", 1)[0]
+
+        if Version(cluster_version) > Version(isolated_version):
+            err_template = "Isolated instance {} reports version {}, cluster node is at {}, setting capacity to zero."
+            logger.error(err_template.format(instance.hostname, instance.version, awx_application_version))
+            instance.capacity = 0
+        else:
+            if instance.capacity == 0 and task_result['capacity_cpu']:
+                logger.warning('Isolated instance {} has re-joined.'.format(instance.hostname))
+            instance.cpu_capacity = int(task_result['capacity_cpu'])
+            instance.mem_capacity = int(task_result['capacity_mem'])
+            instance.capacity = get_system_task_capacity(scale=instance.capacity_adjustment,
+                                                         cpu_capacity=int(task_result['capacity_cpu']),
+                                                         mem_capacity=int(task_result['capacity_mem']))
+        instance.save(update_fields=['cpu_capacity', 'mem_capacity', 'capacity', 'version', 'modified'])
+
+    @classmethod
+    def health_check(cls, instance_qs, awx_application_version):
         '''
         :param instance_qs:         List of Django objects representing the
                                     isolated instances to manage
@@ -386,52 +413,55 @@ class IsolatedManager(object):
         args = cls._build_args('heartbeat_isolated.yml', hostname_string)
         args.extend(['--forks', str(len(instance_qs))])
         env = cls._base_management_env()
-        env['ANSIBLE_STDOUT_CALLBACK'] = 'json'
-
-        buff = cStringIO.StringIO()
-        timeout = max(60, 2 * settings.AWX_ISOLATED_CONNECTION_TIMEOUT)
-        status, rc = IsolatedManager.run_pexpect(
-            args, cls.awx_playbook_path(), env, buff,
-            idle_timeout=timeout, job_timeout=timeout,
-            pexpect_timeout=5
-        )
-        output = buff.getvalue()
-        buff.close()
 
         try:
-            result = json.loads(output)
-            if not isinstance(result, dict):
-                raise TypeError('Expected a dict but received {}.'.format(str(type(result))))
-        except (ValueError, AssertionError, TypeError):
-            logger.exception('Failed to read status from isolated instances, output:\n {}'.format(output))
-            return
+            facts_path = tempfile.mkdtemp()
+            env['ANSIBLE_CACHE_PLUGIN'] = 'jsonfile'
+            env['ANSIBLE_CACHE_PLUGIN_CONNECTION'] = facts_path
 
-        for instance in instance_qs:
-            try:
-                task_result = result['plays'][0]['tasks'][0]['hosts'][instance.hostname]
-            except (KeyError, IndexError):
+            buff = StringIO()
+            timeout = max(60, 2 * settings.AWX_ISOLATED_CONNECTION_TIMEOUT)
+            status, rc = IsolatedManager.run_pexpect(
+                args, cls.awx_playbook_path(), env, buff,
+                idle_timeout=timeout, job_timeout=timeout,
+                pexpect_timeout=5
+            )
+            heartbeat_stdout = buff.getvalue().encode('utf-8')
+            buff.close()
+
+            for instance in instance_qs:
+                output = heartbeat_stdout
                 task_result = {}
-            if 'capacity' in task_result:
-                instance.version = task_result['version']
-                if instance.capacity == 0 and task_result['capacity']:
-                    logger.warning('Isolated instance {} has re-joined.'.format(instance.hostname))
-                instance.capacity = int(task_result['capacity'])
-                instance.save(update_fields=['capacity', 'version', 'modified'])
-            elif instance.capacity == 0:
-                logger.debug('Isolated instance {} previously marked as lost, could not re-join.'.format(
-                    instance.hostname))
-            else:
-                logger.warning('Could not update status of isolated instance {}, msg={}'.format(
-                    instance.hostname, task_result.get('msg', 'unknown failure')
-                ))
-                if instance.is_lost(isolated=True):
-                    instance.capacity = 0
-                    instance.save(update_fields=['capacity'])
-                    logger.error('Isolated instance {} last checked in at {}, marked as lost.'.format(
-                        instance.hostname, instance.modified))
+                try:
+                    with open(os.path.join(facts_path, instance.hostname), 'r') as facts_data:
+                        output = facts_data.read()
+                    task_result = json.loads(output)
+                except Exception:
+                    logger.exception('Failed to read status from isolated instances, output:\n {}'.format(output))
+                if 'awx_capacity_cpu' in task_result and 'awx_capacity_mem' in task_result:
+                    task_result = {
+                        'capacity_cpu': task_result['awx_capacity_cpu'],
+                        'capacity_mem': task_result['awx_capacity_mem'],
+                        'version': task_result['awx_capacity_version']
+                    }
+                    cls.update_capacity(instance, task_result, awx_application_version)
+                    logger.debug('Isolated instance {} successful heartbeat'.format(instance.hostname))
+                elif instance.capacity == 0:
+                    logger.debug('Isolated instance {} previously marked as lost, could not re-join.'.format(
+                        instance.hostname))
+                else:
+                    logger.warning('Could not update status of isolated instance {}'.format(instance.hostname))
+                    if instance.is_lost(isolated=True):
+                        instance.capacity = 0
+                        instance.save(update_fields=['capacity'])
+                        logger.error('Isolated instance {} last checked in at {}, marked as lost.'.format(
+                            instance.hostname, instance.modified))
+        finally:
+            if os.path.exists(facts_path):
+                shutil.rmtree(facts_path)
 
     @staticmethod
-    def wrap_stdout_handle(instance, private_data_dir, stdout_handle, event_data_key='job_id'):
+    def get_stdout_handle(instance, private_data_dir, event_data_key='job_id'):
         dispatcher = CallbackQueueDispatcher()
 
         def job_event_callback(event_data):
@@ -449,15 +479,13 @@ class IsolatedManager(object):
                             event_data.get('event', ''), event_data['uuid'], instance.id, event_data))
             dispatcher.dispatch(event_data)
 
-        return OutputEventFilter(stdout_handle, job_event_callback)
+        return OutputEventFilter(job_event_callback)
 
-    def run(self, instance, host, private_data_dir, proot_temp_dir):
+    def run(self, instance, private_data_dir, proot_temp_dir):
         """
         Run a job on an isolated host.
 
         :param instance:         a `model.Job` instance
-        :param host:             the hostname (or IP address) to run the
-                                 isolated job on
         :param private_data_dir: an absolute path on the local file system
                                  where job-specific data should be written
                                  (i.e., `/tmp/ansible_awx_xyz/`)
@@ -469,14 +497,11 @@ class IsolatedManager(object):
         `ansible-playbook` run.
         """
         self.instance = instance
-        self.host = host
+        self.host = instance.execution_node
         self.private_data_dir = private_data_dir
         self.proot_temp_dir = proot_temp_dir
         status, rc = self.dispatch()
         if status == 'successful':
             status, rc = self.check()
-        else:
-            # If dispatch fails, attempt to consume artifacts that *might* exist
-            self.check()
         self.cleanup()
         return status, rc

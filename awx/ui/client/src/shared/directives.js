@@ -38,7 +38,7 @@ angular.module('AWDirectives', ['RestServices', 'Utilities'])
     };
 })
 
-// caplitalize  Add to any input field where the first letter of each
+// capitalize  Add to any input field where the first letter of each
 //              word should be capitalized. Use in place of css test-transform.
 //              For some reason "text-transform: capitalize" in breadcrumbs
 //              causes a break at each blank space. And of course,
@@ -65,13 +65,29 @@ angular.module('AWDirectives', ['RestServices', 'Utilities'])
     };
 })
 
+// stringToNumber
+//
+// If your model does not contain actual numbers then this directive
+// will do the conversion in the ngModel $formatters and $parsers pipeline.
+//
+.directive('stringToNumber', function() {
+    return {
+        require: 'ngModel',
+        restrict: 'A',
+        link: function(scope, element, attrs, ngModel) {
+            ngModel.$parsers.push(value => value.toFixed(2));
+            ngModel.$formatters.push(value => parseFloat(value));
+        }
+    };
+})
+
 // imageUpload
 //
 // Accepts image and returns base64 information with basic validation
 // Can eventually expand to handle all uploads with different endpoints and handlers
 //
-.directive('imageUpload', ['ConfigurationUtils', 'i18n', '$rootScope',
-function(ConfigurationUtils, i18n, $rootScope) {
+.directive('imageUpload', ['SettingsUtils', 'i18n', '$rootScope',
+function(SettingsUtils, i18n, $rootScope) {
     var browseText = i18n._('BROWSE'),
     placeholderText = i18n._('Choose file'),
     uploadedText = i18n._('Current Image: '),
@@ -84,10 +100,12 @@ function(ConfigurationUtils, i18n, $rootScope) {
         },
         template: `
                 <div class="input-group">
-                      <label class="input-group-addon Form-filePicker--pickerButton" id="filePickerButton" for="filePicker" ng-click="update($event)">${browseText}</label>
-                      <input type="text" class="form-control Form-filePicker--textBox" id="filePickerText" placeholder="${placeholderText}" readonly>
-                      <input type="file" name="file" class="Form-filePicker" id="filePicker"  onchange="angular.element(this).scope().fileChange(this.files)"/>
-                    </div>
+                    <span class="input-group-btn input-group-prepend">
+                        <label class="btn Form-browseButton" id="filePickerButton" for="filePicker" ng-click="update($event)">${browseText}</label>
+                    </span>
+                    <input type="text" class="form-control Form-filePicker--textBox" id="filePickerText" placeholder="${placeholderText}" readonly>
+                    <input type="file" name="file" class="Form-filePicker" id="filePicker"  onchange="angular.element(this).scope().fileChange(this.files)"/>
+                </div>
 
                 <div ng-if="imagePresent" class="Form-filePicker--selectedFile">
                 ${uploadedText}
@@ -141,7 +159,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
             scope.fileChange = function(file) {
                 filePickerError.html('');
 
-                ConfigurationUtils.imageProcess(file[0])
+                SettingsUtils.imageProcess(file[0])
                     .then(function(result) {
                         scope.$parent[fieldKey] = result;
                         filePickerText.val(file[0].name);
@@ -481,7 +499,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
 }])
 
 // lookup   Validate lookup value against API
-.directive('awlookup', ['Rest', 'GetBasePath', '$q', function(Rest, GetBasePath, $q) {
+.directive('awlookup', ['Rest', 'GetBasePath', '$q', '$state', function(Rest, GetBasePath, $q, $state) {
     return {
         require: 'ngModel',
         link: function(scope, elm, attrs, fieldCtrl) {
@@ -556,7 +574,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
 
                 Rest.setUrl(`${basePath}` + query);
                 Rest.get()
-                .success(function (data) {
+                .then(({data}) => {
                     if (data.count === 1) {
                         scope[modelKey] = data.results[0].name;
                         scope[modelName] = data.results[0].id;
@@ -648,7 +666,17 @@ function(ConfigurationUtils, i18n, $rootScope) {
                                 query += '&cloud=true&role_level=use_role';
                                 break;
                             case 'organization':
-                                query += '&role_level=admin_role';
+                                if ($state.current.name.includes('inventories')) {
+                                    query += '&role_level=inventory_admin_role';
+                                } else if ($state.current.name.includes('templates.editWorkflowJobTemplate')) {
+                                    query += '&role_level=workflow_admin_role';
+                                } else if ($state.current.name.includes('projects')) {
+                                    query += '&role_level=project_admin_role';
+                                } else if ($state.current.name.includes('notifications')) {
+                                    query += '&role_level=notification_admin_role';
+                                } else {
+                                    query += '&role_level=admin_role';
+                                }
                                 break;
                             case 'inventory_script':
                                 query += '&role_level=admin_role&organization=' + scope.$resolve.inventoryData.summary_fields.organization.id;
@@ -749,7 +777,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
  *  Include the standard TB data-XXX attributes to controll a tooltip's appearance.  We will
  *  default placement to the left and delay to the config setting.
  */
-.directive('awToolTip', [function() {
+.directive('awToolTip', ['$transitions', function($transitions) {
     return {
         link: function(scope, element, attrs) {
             var delay = { show: 200, hide: 0 },
@@ -769,7 +797,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
             let tooltipInnerClass = (attrs.tooltipInnerClass || attrs.tooltipinnerclass) ? (attrs.tooltipInnerClass || attrs.tooltipinnerclass) : '';
             let tooltipOuterClass = attrs.tooltipOuterClass ? attrs.tooltipOuterClass : '';
 
-            template = '<div class="tooltip Tooltip ' + tooltipOuterClass + '" role="tooltip"><div class="tooltip-arrow Tooltip-arrow"></div><div class="tooltip-inner Tooltip-inner ' + tooltipInnerClass + '"></div></div>';
+            template = '<div class="tooltip Tooltip ' + tooltipOuterClass + '" role="tooltip"><div class="tooltip-arrow Tooltip-arrow arrow"></div><div class="tooltip-inner Tooltip-inner ' + tooltipInnerClass + '"></div></div>';
 
             // This block helps clean up tooltips that may get orphaned by a click event
             $(element).on('mouseenter', function(event) {
@@ -783,7 +811,8 @@ function(ConfigurationUtils, i18n, $rootScope) {
                     // Un-bind - we don't want a bunch of listeners firing
                     stateChangeWatcher();
                 }
-                stateChangeWatcher = scope.$on('$stateChangeStart', function() {
+
+                stateChangeWatcher = $transitions.onStart({}, function() {
                     // Go ahead and force the tooltip setTimeout to expire (if it hasn't already fired)
                     $(element).tooltip('hide');
                     // Clean up any existing tooltips including this one
@@ -809,7 +838,8 @@ function(ConfigurationUtils, i18n, $rootScope) {
                 title: attrs.awToolTip,
                 container: container,
                 trigger: 'hover',
-                template: template
+                template: template,
+                boundary: 'window'
             });
 
             if (attrs.tipWatch) {
@@ -817,7 +847,7 @@ function(ConfigurationUtils, i18n, $rootScope) {
                 scope.$watch(attrs.tipWatch, function(newVal) {
                     // Where did fixTitle come from?:
                     //   http://stackoverflow.com/questions/9501921/change-twitter-bootstrap-tooltip-content-on-click
-                    $(element).tooltip('hide').attr('data-original-title', newVal).tooltip('fixTitle');
+                    $(element).tooltip('hide').attr('data-original-title', newVal).tooltip('_fixTitle');
                 });
             }
         }
@@ -839,11 +869,11 @@ function(ConfigurationUtils, i18n, $rootScope) {
             title = (attrs.overTitle) ? attrs.overTitle : (attrs.popoverTitle) ? attrs.popoverTitle : 'Help',
             container = (attrs.container !== undefined) ? attrs.container : false,
             trigger = (attrs.trigger !== undefined) ? attrs.trigger : 'manual',
-            template = '<div class="popover" role="tooltip"><div class="arrow"></div><h3 class="popover-title"></h3><div class="popover-content"></div></div>',
+            template = '<div class="popover" role="tooltip"><div class="arrow"></div><h3 class="popover-header"></h3><div class="popover-body"></div></div>',
             id_to_close = "";
 
         if (element[0].id) {
-            template = '<div id="' + element[0].id + '_popover_container" class="popover" role="tooltip"><div class="arrow"></div><h3 id="' + element[0].id + '_popover_title" class="popover-title" translate></h3><div id="' + element[0].id + '_popover_content" class="popover-content" translate></div></div>';
+            template = '<div id="' + element[0].id + '_popover_container" class="popover" role="tooltip"><div class="arrow"></div><h3 id="' + element[0].id + '_popover_title" class="popover-header" translate></h3><div id="' + element[0].id + '_popover_content" class="popover-body" translate></div></div>';
         }
 
         scope.triggerPopover = function(e) {
@@ -1222,31 +1252,29 @@ function(ConfigurationUtils, i18n, $rootScope) {
     };
 }])
 
-.directive('awRequireMultiple', [function() {
+.directive('awRequireMultiple', ['Empty', function(Empty) {
     return {
         require: 'ngModel',
         link: function postLink(scope, element, attrs, ngModel) {
             // Watch for changes to the required attribute
-            attrs.$observe('required', function(value) {
-                if(value) {
-                    ngModel.$validators.required = function (value) {
-                        if(angular.isArray(value)) {
-                            if(value.length === 0) {
-                                return false;
-                            }
-                            else {
-                                return (!value[0] || value[0] === "") ? false : true;
-                            }
-                        }
-                        else {
-                            return (!value || value === "") ? false : true;
-                        }
-                    };
-                }
-                else {
-                    delete ngModel.$validators.required;
-                }
+            attrs.$observe('required', function() {
+                ngModel.$validate();
             });
+
+            ngModel.$validators.multipleSelect = function (modelValue) {
+                if(attrs.required) {
+                    if(angular.isArray(modelValue)) {
+                        // Checks to make sure at least one value in the array
+                        return _.some(modelValue, function(arrayVal) {
+                            return !Empty(arrayVal);
+                        });
+                    } else {
+                        return !Empty(modelValue);
+                    }
+                } else {
+                    return true;
+                }
+            };
         }
     };
 }]);

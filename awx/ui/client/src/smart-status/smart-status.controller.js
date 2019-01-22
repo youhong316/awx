@@ -4,8 +4,8 @@
  * All Rights Reserved
  *************************************************/
 
-export default ['$scope', '$filter',
-    function ($scope, $filter) {
+export default ['$scope', '$filter', 'i18n',
+    function ($scope, $filter, i18n) {
 
         function isFailureState(status) {
             return status === 'failed' || status === 'error' || status === 'canceled';
@@ -16,41 +16,30 @@ export default ['$scope', '$filter',
             var firstJobStatus;
             var recentJobs = $scope.jobs;
             var detailsBaseUrl;
-  
+
             if(!recentJobs){
                 return;
             }
 
-            // unless we explicitly define a value for the template-type attribute when invoking the
-            // directive, assume the status icons are for a regular (non-workflow) job when building
-            // the details url path
-            if (typeof $scope.templateType !== 'undefined' && $scope.templateType === 'workflow_job_template') {
-                detailsBaseUrl = '/#/workflows/';
-            } else {
-                detailsBaseUrl = '/#/jobs/';
-            }
-
             var sparkData =
             _.sortBy(recentJobs.map(function(job) {
+                const finished = $filter('longDate')(job.finished) || job.status+"";
 
-                var data = {};
-
-                if (job.status === 'successful') {
-                    data.value = 1;
-                    data.smartStatus = "<i class=\"fa DashboardList-status SmartStatus-tooltip--success\"></i>  " + job.status.toUpperCase();
-                } else if (isFailureState(job.status)) {
-                    data.value = -1;
-                    data.smartStatus = "<i class=\"fa DashboardList-status SmartStatus-tooltip--failed\"></i>  " + job.status.toUpperCase();
-                } else {
-                    data.value = 0;
-                    data.smartStatus = "<i class=\"fa DashboardList-status SmartStatus-tooltip--running\"></i>  " + job.status.toUpperCase();
+                // We now get the job type of recent jobs associated with a JT
+                if (job.type === 'workflow_job') {
+                    detailsBaseUrl = '/#/workflows/';
+                } else if (job.type === 'job') {
+                    detailsBaseUrl = '/#/jobs/playbook/';
                 }
 
-                data.jobId = job.id;
-                data.sortDate = job.finished || "running" + data.jobId;
-                data.finished = $filter('longDate')(job.finished) || job.status+"";
-                data.status_tip = "JOB ID: " + data.jobId + "<br>STATUS: " + data.smartStatus + "<br>FINISHED: " + data.finished;
-                data.detailsUrl = detailsBaseUrl + data.jobId;
+                const data = {
+                    status: job.status,
+                    jobId: job.id,
+                    sortDate: job.finished || "running" + job.id,
+                    finished: finished,
+                    status_tip: `${i18n._('JOB ID')}: ${job.id} <br>${i18n._('STATUS')}: ${job.status.toUpperCase()} <br>${i18n._('FINISHED')}: ${finished}`,
+                    detailsUrl: detailsBaseUrl + job.id
+                };
 
                 // If we've already determined that there are both failed and successful jobs OR if the current job in the loop is
                 // pending/waiting/running then we don't worry about checking for a single job status
@@ -74,6 +63,7 @@ export default ['$scope', '$filter',
             $scope.singleJobStatus = singleJobStatus;
 
             $scope.sparkArray = sparkData;
+            $scope.placeholders = new Array(10 - sparkData.length);
         }
         $scope.$watchCollection('jobs', function(){
             init();

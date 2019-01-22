@@ -1,5 +1,5 @@
-import cStringIO
-import mock
+# -*- coding: utf-8 -*-
+
 import os
 import pytest
 import re
@@ -8,14 +8,18 @@ import stat
 import tempfile
 import time
 from collections import OrderedDict
+from io import StringIO
+from unittest import mock
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from django.utils.encoding import smart_str, smart_bytes
 
 from awx.main.expect import run, isolated_manager
 
 from django.conf import settings
+import six
 
 HERE, FILENAME = os.path.split(__file__)
 
@@ -29,11 +33,11 @@ def rsa_key(request):
         backend=default_backend()
     )
     return (
-        key.private_bytes(
+        smart_str(key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.BestAvailableEncryption(passphrase)
-        ),
+            encryption_algorithm=serialization.BestAvailableEncryption(smart_bytes(passphrase))
+        )),
         passphrase
     )
 
@@ -55,7 +59,7 @@ def mock_sleep(request):
 
 
 def test_simple_spawn():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     status, rc = run.run_pexpect(
         ['ls', '-la'],
         HERE,
@@ -65,11 +69,11 @@ def test_simple_spawn():
     )
     assert status == 'successful'
     assert rc == 0
-    assert FILENAME in stdout.getvalue()
+    # assert FILENAME in stdout.getvalue()
 
 
 def test_error_rc():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     status, rc = run.run_pexpect(
         ['ls', '-nonsense'],
         HERE,
@@ -83,14 +87,14 @@ def test_error_rc():
 
 
 def test_cancel_callback_error():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
 
     def bad_callback():
         raise Exception('unique exception')
 
     extra_fields = {}
     status, rc = run.run_pexpect(
-        ['ls', '-la'],
+        ['sleep', '2'],
         HERE,
         {},
         stdout,
@@ -102,22 +106,24 @@ def test_cancel_callback_error():
     assert extra_fields['job_explanation'] == "System error during job execution, check system logs"
 
 
-def test_env_vars():
-    stdout = cStringIO.StringIO()
+@pytest.mark.timeout(3)  # https://github.com/ansible/tower/issues/2391#issuecomment-401946895
+@pytest.mark.parametrize('value', ['abc123', six.u('Iñtërnâtiônàlizætiøn')])
+def test_env_vars(value):
+    stdout = StringIO()
     status, rc = run.run_pexpect(
         ['python', '-c', 'import os; print os.getenv("X_MY_ENV")'],
         HERE,
-        {'X_MY_ENV': 'abc123'},
+        {'X_MY_ENV': value},
         stdout,
         cancelled_callback=lambda: False,
     )
     assert status == 'successful'
     assert rc == 0
-    assert 'abc123' in stdout.getvalue()
+    assert value in stdout.getvalue()
 
 
 def test_password_prompt():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     expect_passwords = OrderedDict()
     expect_passwords[re.compile(r'Password:\s*?$', re.M)] = 'secret123'
     status, rc = run.run_pexpect(
@@ -134,7 +140,7 @@ def test_password_prompt():
 
 
 def test_job_timeout():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     extra_update_fields={}
     status, rc = run.run_pexpect(
         ['python', '-c', 'import time; time.sleep(5)'],
@@ -151,7 +157,7 @@ def test_job_timeout():
 
 
 def test_manual_cancellation():
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     status, rc = run.run_pexpect(
         ['python', '-c', 'print raw_input("Password: ")'],
         HERE,
@@ -167,7 +173,7 @@ def test_manual_cancellation():
 def test_build_isolated_job_data(private_data_dir, rsa_key):
     pem, passphrase = rsa_key
     mgr = isolated_manager.IsolatedManager(
-        ['ls', '-la'], HERE, {}, cStringIO.StringIO(), ''
+        ['ls', '-la'], HERE, {}, StringIO(), ''
     )
     mgr.private_data_dir = private_data_dir
     mgr.build_isolated_job_data()
@@ -204,7 +210,7 @@ def test_run_isolated_job(private_data_dir, rsa_key):
     env = {'JOB_ID': '1'}
     pem, passphrase = rsa_key
     mgr = isolated_manager.IsolatedManager(
-        ['ls', '-la'], HERE, env, cStringIO.StringIO(), ''
+        ['ls', '-la'], HERE, env, StringIO(), ''
     )
     mgr.private_data_dir = private_data_dir
     secrets = {
@@ -215,7 +221,7 @@ def test_run_isolated_job(private_data_dir, rsa_key):
         'ssh_key_data': pem
     }
     mgr.build_isolated_job_data()
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     # Mock environment variables for callback module
     with mock.patch('os.getenv') as env_mock:
         env_mock.return_value = '/path/to/awx/lib'
@@ -234,7 +240,7 @@ def test_run_isolated_adhoc_command(private_data_dir, rsa_key):
     env = {'AD_HOC_COMMAND_ID': '1'}
     pem, passphrase = rsa_key
     mgr = isolated_manager.IsolatedManager(
-        ['pwd'], HERE, env, cStringIO.StringIO(), ''
+        ['pwd'], HERE, env, StringIO(), ''
     )
     mgr.private_data_dir = private_data_dir
     secrets = {
@@ -245,7 +251,7 @@ def test_run_isolated_adhoc_command(private_data_dir, rsa_key):
         'ssh_key_data': pem
     }
     mgr.build_isolated_job_data()
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     # Mock environment variables for callback module
     with mock.patch('os.getenv') as env_mock:
         env_mock.return_value = '/path/to/awx/lib'
@@ -265,7 +271,7 @@ def test_run_isolated_adhoc_command(private_data_dir, rsa_key):
 
 def test_check_isolated_job(private_data_dir, rsa_key):
     pem, passphrase = rsa_key
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     mgr = isolated_manager.IsolatedManager(['ls', '-la'], HERE, {}, stdout, '')
     mgr.private_data_dir = private_data_dir
     mgr.instance = mock.Mock(id=123, pk=123, verbosity=5, spec_set=['id', 'pk', 'verbosity'])
@@ -315,7 +321,7 @@ def test_check_isolated_job(private_data_dir, rsa_key):
 
 def test_check_isolated_job_timeout(private_data_dir, rsa_key):
     pem, passphrase = rsa_key
-    stdout = cStringIO.StringIO()
+    stdout = StringIO()
     extra_update_fields = {}
     mgr = isolated_manager.IsolatedManager(['ls', '-la'], HERE, {}, stdout, '',
                                            job_timeout=1,

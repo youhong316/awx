@@ -19,7 +19,10 @@ export default ['i18n', function(i18n) {
             // the top-most node of generated state tree
             stateTree: 'teams',
             tabs: true,
-
+            messageBar: {
+                ngShow: 'isOrgAdmin && !canEdit',
+                message: i18n._("Contact your System Administrator to grant you the appropriate permissions to add and edit Users and Teams.")
+            },
             fields: {
                 name: {
                     label: i18n._('Name'),
@@ -81,8 +84,8 @@ export default ['i18n', function(i18n) {
                             ngClick: "$state.go('.add')",
                             label: i18n._('Add'),
                             awToolTip: i18n._('Add User'),
-                            actionClass: 'btn List-buttonSubmit',
-                            buttonContent: '&#43; ' + i18n._('ADD'),
+                            actionClass: 'at-Button--add',
+                            actionId: 'button-add',
                             ngShow: '(team_obj.summary_fields.user_capabilities.edit || canAdd)'
                         }
                     },
@@ -92,13 +95,13 @@ export default ['i18n', function(i18n) {
                             key: true,
                             label: i18n._('User'),
                             linkBase: 'users',
-                            class: 'col-lg-3 col-md-3 col-sm-3 col-xs-4'
+                            columnClass: 'col-sm-6'
                         },
                         role: {
                             label: i18n._('Role'),
                             type: 'role',
                             nosort: true,
-                            class: 'col-lg-4 col-md-4 col-sm-4 col-xs-4'
+                            columnClass: 'col-sm-6'
                         }
                     }
                 },
@@ -124,26 +127,30 @@ export default ['i18n', function(i18n) {
                             label: i18n._('Name'),
                             ngBind: 'permission.summary_fields.resource_name',
                             ngClick: "redirectToResource(permission)",
-                            nosort: true
+                            nosort: true,
+                            columnClass: 'col-sm-4'
                         },
                         type: {
                             label: i18n._('Type'),
                             ngBind: 'permission.summary_fields.resource_type_display_name',
-                            nosort: true
+                            nosort: true,
+                            columnClass: 'col-sm-3'
                         },
                         role: {
                             label: i18n._('Role'),
                             ngBind: 'permission.name',
-                            nosort: true
+                            nosort: true,
+                            columnClass: 'col-sm-3'
                         }
                     },
                     fieldActions: {
+                        columnClass: 'col-sm-2',
                         "delete": {
                             label: i18n._('Remove'),
                             ngClick: 'deletePermissionFromTeam(team_id, team_obj.name, permission.name, permission.summary_fields.resource_name, permission.related.teams)',
                             'class': "List-actionButton--delete",
                             iconClass: 'fa fa-times',
-                            awToolTip: i18n._('Dissasociate permission from team'),
+                            awToolTip: i18n._('Dissassociate permission from team'),
                             dataPlacement: 'top',
                             ngShow: 'permission.summary_fields.user_capabilities.unattach'
                         }
@@ -153,8 +160,8 @@ export default ['i18n', function(i18n) {
                             ngClick: "$state.go('.add')",
                             label: 'Add',
                             awToolTip: i18n._('Grant Permission'),
-                            actionClass: 'btn List-buttonSubmit',
-                            buttonContent: '&#43; ' + i18n._('ADD PERMISSIONS'),
+                            actionClass: 'at-Button--add',
+                            actionId: 'button-add',
                             ngShow: '(team_obj.summary_fields.user_capabilities.edit || canAdd)'
                         }
                     }

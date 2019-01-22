@@ -15,7 +15,7 @@ export default ['NotificationsList', 'i18n', function(NotificationsList, i18n){
     var notifications_object = {
         name: 'notifications',
         index: false,
-        basePath: "notifications",
+        basePath: "notification_templates",
         include: "NotificationsList",
         title: i18n._('Notifications'),
         iterator: 'notification',
@@ -132,7 +132,7 @@ return {
             type: 'select',
             ngOptions: 'source.label for source in source_region_choices track by source.value',
             multiSelect: true,
-            ngShow: "source && (source.value == 'rax' || source.value == 'ec2' || source.value == 'gce' || source.value == 'azure' || source.value == 'azure_rm')",
+            ngShow: "source && (source.value == 'rax' || source.value == 'ec2' || source.value == 'gce' || source.value == 'azure_rm')",
             dataTitle: i18n._('Source Regions'),
             dataPlacement: 'right',
             awPopOver: "<p>" + i18n._("Click on the regions field to see a list of regions for your cloud provider. You can select multiple regions, or choose") +
@@ -144,7 +144,7 @@ return {
         instance_filters: {
             label: i18n._("Instance Filters"),
             type: 'text',
-            ngShow: "source && (source.value == 'ec2' || source.value == 'vmware')",
+            ngShow: "source && (source.value == 'ec2' || source.value == 'vmware' || source.value == 'tower')",
             dataTitle: i18n._('Instance Filters'),
             dataPlacement: 'right',
             awPopOverWatch: 'instanceFilterPopOver',
@@ -303,6 +303,30 @@ return {
             dataContainer: 'body',
             subForm: 'sourceSubForm'
         },
+        azure_rm_variables: {
+            id: 'azure_rm_variables',
+            label: i18n._('Source Variables'), //"{{vars_label}}" ,
+            ngShow: "source && source.value == 'azure_rm'",
+            type: 'textarea',
+            class: 'Form-textAreaLabel Form-formGroup--fullWidth',
+            rows: 6,
+            'default': '---',
+            parseTypeName: 'envParseType',
+            dataTitle: i18n._("Source Variables"),
+            dataPlacement: 'right',
+            awPopOver: "<p>" + i18n._("Override variables found in azure_rm.ini and used by the inventory update script. For a detailed description of these variables ") +
+                "<a href=\"https://github.com/ansible/ansible/blob/devel/contrib/inventory/azure_rm.ini\" target=\"_blank\">" +
+                i18n._("view azure_rm.ini in the Ansible github repo.") + "</a></p>" +
+                "<p>" + i18n._("Enter variables using either JSON or YAML syntax. Use the radio button to toggle between the two.") + "</p>" +
+                i18n._("JSON:") + "<br />\n" +
+                "<blockquote>{<br />&emsp;\"somevar\": \"somevalue\",<br />&emsp;\"password\": \"magic\"<br /> }</blockquote>\n" +
+                i18n._("YAML:") + "<br />\n" +
+                "<blockquote>---<br />somevar: somevalue<br />password: magic<br /></blockquote>\n" +
+                "<p>" + i18n._("View JSON examples at ") + '<a href="http://www.json.org" target="_blank">www.json.org</a></p>' +
+                "<p>" + i18n._("View YAML examples at ") + '<a href="http://docs.ansible.com/YAMLSyntax.html" target="_blank">docs.ansible.com</a></p>',
+            dataContainer: 'body',
+            subForm: 'sourceSubForm'
+        },
         verbosity: {
             label: i18n._('Verbosity'),
             type: 'select',
@@ -321,19 +345,17 @@ return {
             label: i18n._('Update Options'),
             type: 'checkbox_group',
             ngShow: "source && (source.value !== '' && source.value !== null)",
-            class: 'Form-checkbox--stacked',
             subForm: 'sourceSubForm',
             fields: [{
                 name: 'overwrite',
                 label: i18n._('Overwrite'),
                 type: 'checkbox',
                 ngShow: "source.value !== '' && source.value !== null",
-                awPopOver: "<p>" + i18n._("If checked, all child groups and hosts not found on the external source will be deleted from the local inventory.") + '</p><p>' +
+                awPopOver: "<p>" + i18n._("If checked, any hosts and groups that were previously present on the external source but are now removed will be removed from the Tower inventory. Hosts and groups that were not managed by the inventory source will be promoted to the next manually created group or if there is no manually created group to promote them into, they will be left in the \"all\" default group for the inventory.") + '</p><p>' +
                             i18n._("When not checked, local child hosts and groups not found on the external source will remain untouched by the inventory update process.") + "</p>",
                 dataTitle: i18n._('Overwrite'),
                 dataContainer: 'body',
                 dataPlacement: 'right',
-                labelClass: 'checkbox-options',
                 ngDisabled: "(!(inventory_source_obj.summary_fields.user_capabilities.edit || canAdd))"
             }, {
                 name: 'overwrite_vars',
@@ -345,8 +367,7 @@ return {
                 dataTitle: i18n._('Overwrite Variables'),
                 dataContainer: 'body',
                 dataPlacement: 'right',
-                labelClass: 'checkbox-options',
-                ngDisabled: "(!(inventory_source_obj.summary_fields.user_capabilities.edit || canAdd) || source.value === 'scm')"
+                ngDisabled: "(!(inventory_source_obj.summary_fields.user_capabilities.edit || canAdd))"
             }, {
                 name: 'update_on_launch',
                 label: i18n._('Update on Launch'),
@@ -357,7 +378,6 @@ return {
                 dataTitle: i18n._('Update on Launch'),
                 dataContainer: 'body',
                 dataPlacement: 'right',
-                labelClass: 'checkbox-options',
                 ngDisabled: '!(inventory_source_obj.summary_fields.user_capabilities.edit || canAdd)'
             }, {
                 name: 'update_on_project_update',
@@ -370,7 +390,6 @@ return {
                 dataTitle: i18n._('Update on Project Update'),
                 dataContainer: 'body',
                 dataPlacement: 'right',
-                labelClass: 'checkbox-options',
                 ngDisabled: '!(inventory_source_obj.summary_fields.user_capabilities.edit || canAdd)'
             }]
         },
@@ -411,8 +430,14 @@ return {
     },
 
     related: {
-        notifications: notifications_object
+        notifications: notifications_object,
+        schedules: {
+            title: i18n._('Schedules'),
+            skipGenerator: true,
+            ngClick: "$state.go('inventories.edit.inventory_sources.edit.schedules')"
+        }
     }
+
 };
 
 }];

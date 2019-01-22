@@ -102,6 +102,10 @@
     flex-wrap:wrap;
 }
 
+.Form-tabHolder--licenseSelected {
+    margin-bottom: -20px;
+}
+
 .Form-tabs {
     flex: 1 0 auto;
     display: flex;
@@ -209,12 +213,6 @@
     input.form-control[disabled], input.form-control[readonly], fieldset[disabled] input.form-control {
         border-color: @b7grey;
         background-color: @ebgrey;
-    }
-}
-
-.Form-checkbox--stacked {
-    label {
-        display: block;
     }
 }
 
@@ -355,7 +353,7 @@
 .Form-numberInputButton {
     color: @default-icon!important;
     font-size: 14px;
-
+    display: block;
 }
 
 .Form-dropDown {
@@ -420,13 +418,12 @@
     width: 100%;
 }
 
-.Form-passwordButton {
+.Form-browseButton, .Form-passwordButton {
     height: 30px;
     color: @default-interface-txt;
     text-transform: uppercase;
-    line-height: 1;
-    padding-left: 7px;
-    padding-right: 7px;
+    line-height: 1.2;
+    padding: 6px 12px;
     background-color: @default-bg;
     border:1px solid @b7grey;
 }
@@ -458,7 +455,6 @@
     align-items: center;
     justify-content: center;
     border:1px solid @field-border;
-    border-right: 0px;
 }
 
 .Form-lookupButton:hover {
@@ -470,7 +466,6 @@
 .Form-lookupButton:active,
 .Form-lookupButton:focus {
     border: 1px solid @field-border;
-    border-right: 0px;
 }
 
 .CodeMirror {
@@ -580,7 +575,6 @@ input[type='radio']:checked:before {
     color: @default-interface-txt;
     font-weight: normal;
     font-size: small;
-    padding-right:5px;
     width: 100%;
     .noselect;
 }
@@ -628,9 +622,18 @@ input[type='radio']:checked:before {
     background-color: @submit-button-bg-dis;
 }
 
+.Form-saveButton--disabled {
+    background-color: @submit-button-bg-dis;
+    cursor: not-allowed;
+}
+
 .Form-saveButton:hover, .Form-launchButton:hover {
     background-color: @submit-button-bg-hov;
     color: @submit-button-text;
+}
+
+.Form-saveButton--disabled:hover {
+    background-color: @submit-button-bg-dis;
 }
 
 .Form-cancelButton {
@@ -668,6 +671,10 @@ input[type='radio']:checked:before {
 
 .Form-primaryButton.Form-tab--disabled:hover {
     background-color: @default-link;
+}
+
+.Form-primaryButton--noMargin {
+    margin-right: 0px;
 }
 
 .Form-formGroup--singleColumn {
@@ -772,4 +779,10 @@ input[type='radio']:checked:before {
 .form-control[disabled], .form-control[readonly], fieldset[disabled] .form-control {
     border-color: @b7grey;
     background-color: @ebgrey;
+}
+
+.Form-checkbox {
+    label {
+        font-weight: 400;
+    }
 }

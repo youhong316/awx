@@ -139,7 +139,7 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                 icon = 'fa-refresh';
                 break;
             case 'scm_update':
-                icon = 'fa-cloud-download';
+                icon = 'fa-refresh';
                 break;
             case 'run':
             case 'rerun':
@@ -193,6 +193,9 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                 break;
             case 'insights':
                 icon = "fa-info";
+                break;
+            case 'network':
+                icon = "fa-sitemap";
                 break;
             case 'cancel':
                 icon = "fa-minus-circle";
@@ -468,65 +471,55 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                 fld = params.fld,
                 options = params.options,
                 base = params.base,
-                field = list.fields[fld],
-                html = '',
-                classList;
+                field = params.field ? params.field : list.fields[fld],
+                html = '';
+
+            field.columnClass = field.columnClass ? "List-tableCell " + field.columnClass : "List-tableCell";
+            const classList = Attr(field, 'columnClass');
 
             if (field.type !== undefined && field.type === 'DropDown') {
                 html = DropDown(params);
             } else if (field.type === 'role') {
-                classList = (field.columnClass) ?
-                    Attr(field, 'columnClass') : "";
                 html += `
-<td ${classList}>
+<div ${classList}>
     <role-list delete-target=\"${list.iterator}\" class=\"RoleList\">
     </role-list>
-</td>
+</div>
                 `;
             } else if (field.type === 'team_roles') {
-                classList = (field.columnClass) ?
-                    Attr(field, 'columnClass') : "";
                 html += `
-<td ${classList}>
+<div ${classList}>
     <role-list delete-target=\"${list.iterator}\" class=\"RoleList\" team-role-list="true">
     </role-list>
-</td>
+</div>
                 `;
             } else if (field.type === 'labels') {
                 let showDelete = field.showDelete === undefined ? true : field.showDelete;
-                classList = (field.columnClass) ?
-                    Attr(field, 'columnClass') : "";
                     html += `
-<td ${classList}>
+<div ${classList}>
     <labels-list class=\"LabelList\" show-delete="${showDelete}">
     </labels-list>
-</td>
+</div>
                     `;
             } else if (field.type === 'related_groups') {
                 let showDelete = field.showDelete === undefined ? true : field.showDelete;
-                classList = (field.columnClass) ?
-                    Attr(field, 'columnClass') : "";
                     html += `
-<td ${classList}>
+<div ${classList}>
     <related-groups-labels-list class=\"LabelList\" show-delete="${showDelete}">
     </related-groups-labels-list>
-</td>
+</div>
                     `;
             } else if (field.type === 'owners') {
-                classList = (field.columnClass) ?
-                    Attr(field, 'columnClass') : "";
                 html += `
-<td ${classList}>
+<div ${classList}>
     <owner-list></owner-list>
-</td>
+</div>
                 `;
             } else if (field.type === 'revision') {
-                classList = (field.columnClass) ?
-                Attr(field, 'columnClass') : "";
                 html += `
-                <td ${classList}>
+                <div ${classList}>
                     <at-truncate ng-if="project.scm_revision" string="{{project.scm_revision}}" maxLength="7"></at-truncate>
-                </td>`;
+                </div>`;
             } else if (field.type === 'badgeCount') {
                 html = BadgeCount(params);
             } else if (field.type === 'badgeOnly') {
@@ -534,7 +527,7 @@ angular.module('GeneratorHelpers', [systemStatus.name])
             } else if (field.type === 'template') {
                 html = Template(field);
             } else if (field.type === 'toggle') {
-                html += "<td class=\"List-tableCell " + fld + "-column";
+                html += "<div class=\"ScheduleToggle-listTableCell " + fld + "-column";
                 html += (field['class']) ? " " + field['class'] : "";
                 html += field.columnClass ? " " + field.columnClass : "";
                 html += "\"><div class='ScheduleToggle' ng-class='{\"is-on\": " + list.iterator + ".";
@@ -548,9 +541,14 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                 html += (field.ngDisabled) ? `ng-disabled="${field.ngDisabled}" ` : "";
                 html += "ng-show='!" + list.iterator + "." ;
                 html += (field.flag) ? field.flag : "enabled";
-                html += "' class='ScheduleToggle-switch' ng-click='" + field.ngClick + "'>" + i18n._("OFF") + "</button></div></td>";
+                html += "' class='ScheduleToggle-switch' ng-click='" + field.ngClick + "'>" + i18n._("OFF") + "</button></div></div>";
+            } else if (field.type === 'invalid') {
+                html += `<div class='List-tableRow--invalid'><div class='List-tableRow--invalidBar' ng-show="${field.ngShow}"`;
+                html += `aw-tool-tip="${field.awToolTip}" data-placement=${field.dataPlacement}>`;
+                html += "<i class='fa fa-exclamation'></i>";
+                html += "</div></div>";
             } else {
-                html += "<td class=\"List-tableCell " + fld + "-column";
+                html += "<div class=\"List-tableCell " + fld + "-column";
                 html += (field['class']) ? " " + field['class'] : "";
                 if (options.mode === 'lookup' && field.modalColumnClass) {
                     html += " " + field.modalColumnClass;
@@ -560,7 +558,13 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                 }
                 html += "\" ";
                 html += field.columnNgClass ? " ng-class=\"" + field.columnNgClass + "\"": "";
-                html += (options.mode === 'lookup' || options.mode === 'select') ? " ng-click=\"toggle_row(" + list.iterator + ")\"" : "";
+                if(options.mode === 'lookup' || options.mode === 'select') {
+                    if (options.input_type === "radio") {
+                        html += " ng-click=\"toggle_row(" + list.iterator + ")\"";
+                    } else {
+                        html += " ng-click=\"toggle_" + list.iterator + "(" + list.iterator + ", true)\"";
+                    }
+                }
                 html += (field.columnShow) ? Attr(field, 'columnShow') : "";
                 html += (field.ngBindHtml) ? "ng-bind-html=\"" + field.ngBindHtml + "\" " : "";
                 html += (field.columnClick) ? "ng-click=\"" + field.columnClick + "\" " : "";
@@ -598,7 +602,7 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                     }
 
                     // Start the Link
-                    if ((field.key || field.link || field.linkTo || field.ngClick || field.ngHref || field.awToolTip || field.awPopOver) &&
+                    if ((field.key || field.link || field.linkTo || field.ngClick || field.ngHref || field.uiSref || field.awToolTip || field.awPopOver) &&
                         options.mode !== 'lookup' && options.mode !== 'select' && !field.noLink && !field.ngBindHtml) {
                         if(field.noLink === true){
                             // provide an override here in case we want key=true for sorting purposes but don't want links -- see: portal mode,
@@ -682,49 +686,20 @@ angular.module('GeneratorHelpers', [systemStatus.name])
                     if (options.mode !== 'lookup' && field.badgeIcon && field.badgePlacement && field.badgePlacement !== 'left') {
                         html += Badge(field);
                     }
-                }
 
+                    // Field Tag
+                    if (field.tag) {
+                        html += `<span class="at-RowItem-tag" ng-show="${field.showTag}">
+                                    ${field.tag}
+                                </span>`;
+                    }
+                }
+                html += "</div>";
             }
-            return html += "</td>\n";
+            return html;
         };
     }
 ])
-
-.factory('HelpCollapse', function () {
-    return function (params) {
-
-        var hdr = params.hdr,
-            content = params.content,
-            show = params.show,
-            ngHide = params.ngHide,
-            idx = params.idx,
-            bind = params.bind,
-            html = '';
-
-        html += "<div class=\"panel-group collapsible-help\" ";
-        html += (show) ? "ng-show=\"" + show + "\" " : "";
-        html += (ngHide) ? "ng-hide=\"" + ngHide  + "\" " : "";
-        html += ">\n";
-        html += "<div class=\"panel panel-default\">\n";
-        html += "<div class=\"panel-heading\" ng-click=\"accordionToggle('#accordion" + idx + "')\">\n";
-        html += "<h4 class=\"panel-title\">\n";
-        //html += "<i class=\"fa fa-question-circle help-collapse\"></i> " + hdr;
-        html += hdr;
-        html += "<i class=\"fa fa-minus pull-right collapse-help-icon\" id=\"accordion" + idx + "-icon\"></i>";
-        html += "</h4>\n";
-        html += "</div>\n";
-        html += "<div id=\"accordion" + idx + "\" class=\"panel-collapse collapse in\">\n";
-        html += "<div class=\"panel-body\" ";
-        html += (bind) ? "ng-bind-html=\"" + bind + "\" " : "";
-        html += ">\n";
-        html += (!bind) ? content : "";
-        html += "</div>\n";
-        html += "</div>\n";
-        html += "</div>\n";
-        html += "</div>\n";
-        return html;
-    };
-})
 
 .factory('ActionButton', function () {
     return function (options) {
@@ -737,6 +712,7 @@ angular.module('GeneratorHelpers', [systemStatus.name])
         html += (options.dataPlacement) ? "data-placement=\"" + options.dataPlacement + "\" " : "";
         html += (options.dataContainer) ? "data-container=\"" + options.dataContainer + "\" " : "";
         html += (options.actionClass) ? "class=\"" + options.actionClass + "\" " : "";
+        html += (options.actionId) ? "id=\"" + options.actionId + "\" " : "";
         html += (options.dataTitle) ? "data-title=\"" + options.dataTitle + "\" " : "";
         html += (options.ngDisabled) ? "ng-disabled=\"" + options.ngDisabled + "\" " : "";
         html += (options.ngClick) ? "ng-click=\"$eval(" + options.ngClick + ")\" " : "";
@@ -751,5 +727,19 @@ angular.module('GeneratorHelpers', [systemStatus.name])
 
         return html;
 
+    };
+})
+
+.factory('MessageBar', function() {
+    return function(options) {
+        let html = '';
+        if (_.has(options, 'messageBar')) {
+            let { messageBar } = options;
+            html += `<div class="Section-messageBar" ng-show="${messageBar.ngShow}">
+                <i class="Section-messageBar-warning fa fa-warning"></i>
+                <span class="Section-messageBar-text">${messageBar.message}</span>
+            </div>`;
+        }
+        return html;
     };
 });

@@ -1,9 +1,15 @@
 import pytest
 
+from django.utils.encoding import smart_str
+
 from awx.api.versioning import reverse
 from awx.main.models import UnifiedJob, ProjectUpdate, InventoryUpdate
-from awx.main.tests.base import URI
-from awx.main.models.unified_jobs import ACTIVE_STATES
+from awx.main.tests.URI import URI
+from awx.main.constants import ACTIVE_STATES
+
+
+TEST_STATES = list(ACTIVE_STATES)
+TEST_STATES.remove('new')
 
 
 TEST_STDOUTS = []
@@ -29,7 +35,9 @@ TEST_STDOUTS.append({
 def test_cases(project):
     ret = []
     for e in TEST_STDOUTS:
-        e['project'] = ProjectUpdate(project=project)
+        pu = ProjectUpdate(project=project)
+        pu.save()
+        e['project'] = pu
         e['project'].result_stdout_text = e['text']
         e['project'].save()
         ret.append(e)
@@ -64,6 +72,7 @@ def test_project_update_redaction_enabled(get, format, content_type, test_cases,
         assert content_type in response['CONTENT-TYPE']
         assert response.data is not None
         content = response.data['content'] if format == 'json' else response.data
+        content = smart_str(content)
         assert test_data['uri'].username not in content
         assert test_data['uri'].password not in content
         assert content.count(test_data['uri'].host) == test_data['occurrences']
@@ -76,6 +85,7 @@ def test_job_redaction_disabled(get, format, content_type, negative_test_cases, 
         job = test_data['job']
         response = get(reverse("api:job_stdout", kwargs={'pk': job.pk}) + "?format=" + format, user=admin, expect=200, format=format)
         content = response.data['content'] if format == 'json' else response.data
+        content = smart_str(content)
         assert response.data is not None
         assert test_data['uri'].username in content
         assert test_data['uri'].password in content
@@ -93,7 +103,7 @@ def test_options_fields_choices(instance, options, user):
     assert UnifiedJob.STATUS_CHOICES == response.data['actions']['GET']['status']['choices']
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_job_in_active_state(job_factory, delete, admin, status):
     j = job_factory(initial_state=status)
@@ -101,7 +111,7 @@ def test_delete_job_in_active_state(job_factory, delete, admin, status):
     delete(url, None, admin, expect=403)
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_project_update_in_active_state(project, delete, admin, status):
     p = ProjectUpdate(project=project, status=status)
@@ -110,7 +120,7 @@ def test_delete_project_update_in_active_state(project, delete, admin, status):
     delete(url, None, admin, expect=403)
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_inventory_update_in_active_state(inventory_source, delete, admin, status):
     i = InventoryUpdate.objects.create(inventory_source=inventory_source, status=status)
@@ -118,7 +128,7 @@ def test_delete_inventory_update_in_active_state(inventory_source, delete, admin
     delete(url, None, admin, expect=403)
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_workflow_job_in_active_state(workflow_job_factory, delete, admin, status):
     wj = workflow_job_factory(initial_state=status)
@@ -126,7 +136,7 @@ def test_delete_workflow_job_in_active_state(workflow_job_factory, delete, admin
     delete(url, None, admin, expect=403)
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_system_job_in_active_state(system_job_factory, delete, admin, status):
     sys_j = system_job_factory(initial_state=status)
@@ -134,7 +144,7 @@ def test_delete_system_job_in_active_state(system_job_factory, delete, admin, st
     delete(url, None, admin, expect=403)
 
 
-@pytest.mark.parametrize("status", list(ACTIVE_STATES))
+@pytest.mark.parametrize("status", list(TEST_STATES))
 @pytest.mark.django_db
 def test_delete_ad_hoc_command_in_active_state(ad_hoc_command_factory, delete, admin, status):
     adhoc = ad_hoc_command_factory(initial_state=status)

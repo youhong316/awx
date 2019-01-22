@@ -27,7 +27,13 @@ import os
 import stat
 import threading
 import uuid
-import memcache
+
+try:
+    import memcache
+except ImportError:
+    raise ImportError('python-memcached is missing; {}bin/pip install python-memcached'.format(
+        os.environ['VIRTUAL_ENV']
+    ))
 
 __all__ = ['event_context']
 
@@ -48,9 +54,8 @@ class IsolatedFileWrite:
         filename = '{}-partial.json'.format(event_uuid)
         dropoff_location = os.path.join(self.private_data_dir, 'artifacts', 'job_events', filename)
         write_location = '.'.join([dropoff_location, 'tmp'])
-        partial_data = json.dumps(value)
         with os.fdopen(os.open(write_location, os.O_WRONLY | os.O_CREAT, stat.S_IRUSR | stat.S_IWUSR), 'w') as f:
-            f.write(partial_data)
+            f.write(value)
         os.rename(write_location, dropoff_location)
 
 
@@ -123,6 +128,8 @@ class EventContext(object):
             event_data['job_id'] = int(os.getenv('JOB_ID', '0'))
         if os.getenv('AD_HOC_COMMAND_ID', ''):
             event_data['ad_hoc_command_id'] = int(os.getenv('AD_HOC_COMMAND_ID', '0'))
+        if os.getenv('PROJECT_UPDATE_ID', ''):
+            event_data['project_update_id'] = int(os.getenv('PROJECT_UPDATE_ID', '0'))
         event_data.setdefault('pid', os.getpid())
         event_data.setdefault('uuid', str(uuid.uuid4()))
         event_data.setdefault('created', datetime.datetime.utcnow().isoformat())
@@ -144,8 +151,8 @@ class EventContext(object):
         if event not in ('playbook_on_stats',) and "res" in event_data and len(str(event_data['res'])) > max_res:
             event_data['res'] = {}
         event_dict = dict(event=event, event_data=event_data)
-        for key in event_data.keys():
-            if key in ('job_id', 'ad_hoc_command_id', 'uuid', 'parent_uuid', 'created',):
+        for key in list(event_data.keys()):
+            if key in ('job_id', 'ad_hoc_command_id', 'project_update_id', 'uuid', 'parent_uuid', 'created',):
                 event_dict[key] = event_data.pop(key)
             elif key in ('verbosity', 'pid'):
                 event_dict[key] = event_data[key]
@@ -155,11 +162,11 @@ class EventContext(object):
         return {}
 
     def dump(self, fileobj, data, max_width=78, flush=False):
-        b64data = base64.b64encode(json.dumps(data))
+        b64data = base64.b64encode(json.dumps(data).encode('utf-8')).decode()
         with self.display_lock:
             # pattern corresponding to OutputEventFilter expectation
             fileobj.write(u'\x1b[K')
-            for offset in xrange(0, len(b64data), max_width):
+            for offset in range(0, len(b64data), max_width):
                 chunk = b64data[offset:offset + max_width]
                 escaped_chunk = u'{}\x1b[{}D'.format(chunk, len(chunk))
                 fileobj.write(escaped_chunk)
@@ -169,7 +176,7 @@ class EventContext(object):
 
     def dump_begin(self, fileobj):
         begin_dict = self.get_begin_dict()
-        self.cache.set(":1:ev-{}".format(begin_dict['uuid']), begin_dict)
+        self.cache.set(":1:ev-{}".format(begin_dict['uuid']), json.dumps(begin_dict))
         self.dump(fileobj, {'uuid': begin_dict['uuid']})
 
     def dump_end(self, fileobj):

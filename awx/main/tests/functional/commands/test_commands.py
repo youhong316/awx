@@ -1,10 +1,7 @@
 import sys
 import pytest
 
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
+from io import StringIO
 
 from django.core.management import call_command
 
@@ -39,8 +36,8 @@ def run_command(name, *args, **options):
 
 @pytest.mark.parametrize(
     "username,password,expected,changed", [
-        ('admin', 'dingleberry', 'Password updated\n', True),
-        ('admin', 'admin', 'Password not updated\n', False),
+        ('admin', 'dingleberry', 'Password updated', True),
+        ('admin', 'admin', 'Password not updated', False),
         (None, 'foo', 'username required', False),
         ('admin', None, 'password required', False),
     ]

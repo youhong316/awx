@@ -21,7 +21,7 @@ from awx.api.generics import *  # noqa
 from awx.api.permissions import IsSuperUser
 from awx.api.versioning import reverse, get_request_version
 from awx.main.utils import *  # noqa
-from awx.main.utils.handlers import BaseHTTPSHandler, LoggingConnectivityException
+from awx.main.utils.handlers import AWXProxyHandler, LoggingConnectivityException
 from awx.main.tasks import handle_setting_changes
 from awx.conf.license import get_licensed_features
 from awx.conf.models import Setting
@@ -44,7 +44,6 @@ class SettingCategoryList(ListAPIView):
     model = Setting  # Not exactly, but needed for the view.
     serializer_class = SettingCategorySerializer
     filter_backends = []
-    new_in_310 = True
     view_name = _('Setting Categories')
 
     def get_queryset(self):
@@ -69,12 +68,11 @@ class SettingSingletonDetail(RetrieveUpdateDestroyAPIView):
     model = Setting  # Not exactly, but needed for the view.
     serializer_class = SettingSingletonSerializer
     filter_backends = []
-    new_in_310 = True
     view_name = _('Setting Detail')
 
     def get_queryset(self):
         self.category_slug = self.kwargs.get('category_slug', 'all')
-        all_category_slugs = settings_registry.get_registered_categories(features_enabled=get_licensed_features()).keys()
+        all_category_slugs = list(settings_registry.get_registered_categories(features_enabled=get_licensed_features()).keys())
         for slug_to_delete in VERSION_SPECIFIC_CATEGORIES_TO_EXCLUDE[get_request_version(self.request)]:
             all_category_slugs.remove(slug_to_delete)
         if self.request.user.is_superuser or getattr(self.request.user, 'is_system_auditor', False):
@@ -125,7 +123,7 @@ class SettingSingletonDetail(RetrieveUpdateDestroyAPIView):
             if key == 'LICENSE' or settings_registry.is_setting_read_only(key):
                 continue
             if settings_registry.is_setting_encrypted(key) and \
-                    isinstance(value, basestring) and \
+                    isinstance(value, str) and \
                     value.startswith('$encrypted$'):
                 continue
             setattr(serializer.instance, key, value)
@@ -170,7 +168,6 @@ class SettingLoggingTest(GenericAPIView):
     serializer_class = SettingSingletonSerializer
     permission_classes = (IsSuperUser,)
     filter_backends = []
-    new_in_320 = True
 
     def post(self, request, *args, **kwargs):
         defaults = dict()
@@ -201,8 +198,9 @@ class SettingLoggingTest(GenericAPIView):
             mock_settings = MockSettings()
             for k, v in serializer.validated_data.items():
                 setattr(mock_settings, k, v)
-            mock_settings.LOG_AGGREGATOR_LEVEL = 'DEBUG'
-            BaseHTTPSHandler.perform_test(mock_settings)
+            AWXProxyHandler().perform_test(custom_settings=mock_settings)
+            if mock_settings.LOG_AGGREGATOR_PROTOCOL.upper() == 'UDP':
+                return Response(status=status.HTTP_201_CREATED)
         except LoggingConnectivityException as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(status=status.HTTP_200_OK)
@@ -212,7 +210,7 @@ class SettingLoggingTest(GenericAPIView):
 # in URL patterns and reverse URL lookups, converting CamelCase names to
 # lowercase_with_underscore (e.g. MyView.as_view() becomes my_view).
 this_module = sys.modules[__name__]
-for attr, value in locals().items():
+for attr, value in list(locals().items()):
     if isinstance(value, type) and issubclass(value, APIView):
         name = camelcase_to_underscore(attr)
         view = value.as_view()

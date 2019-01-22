@@ -2,8 +2,7 @@ export default
     function KindChange(Empty, i18n) {
         return function(params) {
             var scope = params.scope,
-            reset = params.reset,
-            collapse, id;
+            reset = params.reset;
 
             $('.popover').each(function() {
                 // remove lingering popover <div>. Seems to be a bug in TB3 RC1
@@ -91,12 +90,6 @@ export default
                         "two words followed by a three digit number.  Such " +
                         "as: ") + "</p><p>adjective-noun-000</p>";
                     break;
-                    case 'azure':
-                        scope.sshKeyDataLabel = i18n._('Management Certificate');
-                        scope.subscription_required = true;
-                        scope.key_required = true;
-                        scope.key_description = i18n._("Paste the contents of the PEM file that corresponds to the certificate you uploaded in the Microsoft Azure console.");
-                    break;
                     case 'azure_rm':
                         scope.usernameLabel = i18n._("Username");
                         scope.subscription_required = true;
@@ -142,7 +135,7 @@ export default
                        scope.host_required = true;
                        scope.hostLabel = i18n._("CloudForms URL");
                        scope.hostPopOver = i18n.sprintf(i18n._("Enter the URL for the virtual machine which %s" +
-                           "corresponds to your CloudForm instance. %s" +
+                           "corresponds to your CloudForms instance. %s" +
                            "For example, %s"), "<br />", "<br />", "https://cloudforms.example.org");
                     break;
                     case 'net':
@@ -169,19 +162,6 @@ export default
                 scope.become_password = null;
                 scope.authorize = false;
                 scope.authorize_password = null;
-            }
-
-            // Collapse or open help widget based on whether scm value is selected
-            collapse = $('#credential_kind').parent().find('.panel-collapse').first();
-            id = collapse.attr('id');
-            if (!Empty(scope.kind) && scope.kind.value !== '') {
-                if ($('#' + id + '-icon').hasClass('icon-minus')) {
-                    scope.accordionToggle('#' + id);
-                }
-            } else {
-                if ($('#' + id + '-icon').hasClass('icon-plus')) {
-                    scope.accordionToggle('#' + id);
-                }
             }
         };
     }

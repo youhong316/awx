@@ -16,6 +16,7 @@ function AtInputGroupController ($scope, $compile) {
     let state;
     let source;
     let element;
+    let formId;
 
     vm.init = (_scope_, _form_, _element_) => {
         form = _form_;
@@ -23,6 +24,7 @@ function AtInputGroupController ($scope, $compile) {
         element = _element_;
         state = scope.state || {};
         source = state._source;
+        ({ formId } = scope);
 
         $scope.$watch('state._source._value', vm.update);
     };
@@ -99,6 +101,8 @@ function AtInputGroupController ($scope, $compile) {
             config._component = 'at-input-number';
         } else if (input.type === 'boolean') {
             config._component = 'at-input-checkbox';
+        } else if (input.type === 'file') {
+            config._component = 'at-input-file';
         } else if (input.choices) {
             config._component = 'at-input-select';
             config._format = 'array';
@@ -114,6 +118,7 @@ function AtInputGroupController ($scope, $compile) {
 
     vm.insert = group => {
         const container = document.createElement('div');
+        container.className = 'row';
         let col = 1;
         const colPerRow = 12 / scope.col;
         let isDivided = true;
@@ -143,7 +148,7 @@ function AtInputGroupController ($scope, $compile) {
         const tabindex = Number(scope.tab) + index;
         const col = input._expand ? 12 : scope.col;
         const component = angular.element(`<${input._component} col="${col}" tab="${tabindex}"
-                state="${state._reference}._group[${index}]">
+                state="${state._reference}._group[${index}]" id="${formId}_${input.id}_group">
             </${input._component}>`);
 
         $compile(component)(scope.$parent);
@@ -181,7 +186,8 @@ function atInputGroup () {
         scope: {
             state: '=',
             col: '@',
-            tab: '@'
+            tab: '@',
+            formId: '@'
         }
     };
 }

@@ -1,6 +1,6 @@
 const path = require('path');
 
-const _ = require('lodash');
+const merge = require('webpack-merge');
 const webpack = require('webpack');
 const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
@@ -25,17 +25,14 @@ const production = {
             filename: INSTALL_RUNNING_OUTPUT,
             inject: false,
             chunks: CHUNKS,
-            chunksSortMode: (chunk) => {
-                if (chunk.names[0] === 'polyfill' || chunk.names[0] === 'vendor') {
-                    return -1;
-                }
-
-                return 1;
+            chunksSortMode: chunk => (chunk.names[0] === 'vendor' ? -1 : 1)
+        }),
+        new webpack.DefinePlugin({
+            'process.env': {
+                NODE_ENV: JSON.stringify('production')
             }
         })
     ]
 };
 
-production.plugins = base.plugins.concat(production.plugins);
-
-module.exports = _.merge(base, production);
+module.exports = merge(base, production);

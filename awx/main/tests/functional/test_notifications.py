@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 
 from requests.adapters import HTTPAdapter
@@ -75,7 +75,7 @@ def test_inherited_notification_templates(get, post, user, organization, project
     u = user('admin-poster', True)
     url = reverse('api:notification_template_list')
     notification_templates = []
-    for nfiers in xrange(3):
+    for nfiers in range(3):
         response = post(url,
                         dict(name="test-webhook-{}".format(nfiers),
                              description="test webhook {}".format(nfiers),

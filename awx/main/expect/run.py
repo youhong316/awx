@@ -4,7 +4,6 @@ import argparse
 import base64
 import codecs
 import collections
-import cStringIO
 import logging
 import json
 import os
@@ -13,8 +12,12 @@ import pipes
 import re
 import signal
 import sys
-import thread
+import threading
 import time
+try:
+    from io import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 import pexpect
 import psutil
@@ -47,8 +50,11 @@ def open_fifo_write(path, data):
     This blocks the thread until an external process (such as ssh-agent)
     reads data from the pipe.
     '''
-    os.mkfifo(path, 0600)
-    thread.start_new_thread(lambda p, d: open(p, 'w').write(d), (path, data))
+    os.mkfifo(path, 0o600)
+    threading.Thread(
+        target=lambda p, d: open(p, 'w').write(d),
+        args=(path, data)
+    ).start()
 
 
 def run_pexpect(args, cwd, env, logfile,
@@ -70,7 +76,7 @@ def run_pexpect(args, cwd, env, logfile,
                                 - signifying if the job has been prematurely
                                   cancelled
     :param expect_passwords:    a dict of regular expression password prompts
-                                to input values, i.e., {r'Password:\s*?$':
+                                to input values, i.e., {r'Password:*?$':
                                 'some_password'}
     :param extra_update_fields: a dict used to specify DB fields which should
                                 be updated on the underlying model
@@ -96,13 +102,12 @@ def run_pexpect(args, cwd, env, logfile,
         # enforce usage of an OrderedDict so that the ordering of elements in
         # `keys()` matches `values()`.
         expect_passwords = collections.OrderedDict(expect_passwords)
-    password_patterns = expect_passwords.keys()
-    password_values = expect_passwords.values()
+    password_patterns = list(expect_passwords.keys())
+    password_values = list(expect_passwords.values())
 
-    logfile_pos = logfile.tell()
     child = pexpect.spawn(
         args[0], args[1:], cwd=cwd, env=env, ignore_sighup=True,
-        encoding='utf-8', echo=False,
+        encoding='utf-8', echo=False, use_poll=True
     )
     child.logfile_read = logfile
     canceled = False
@@ -116,13 +121,11 @@ def run_pexpect(args, cwd, env, logfile,
         password = password_values[result_id]
         if password is not None:
             child.sendline(password)
-        if logfile_pos != logfile.tell():
-            logfile_pos = logfile.tell()
             last_stdout_update = time.time()
         if cancelled_callback:
             try:
                 canceled = cancelled_callback()
-            except:
+            except Exception:
                 logger.exception('Could not check cancel callback - canceling immediately')
                 if isinstance(extra_update_fields, dict):
                     extra_update_fields['job_explanation'] = "System error during job execution, check system logs"
@@ -204,6 +207,12 @@ def run_isolated_job(private_data_dir, secrets, logfile=sys.stdout):
     env['AWX_ISOLATED_DATA_DIR'] = private_data_dir
     env['PYTHONPATH'] = env.get('PYTHONPATH', '') + callback_dir + ':'
 
+    venv_path = env.get('VIRTUAL_ENV')
+    if venv_path and not os.path.exists(venv_path):
+        raise RuntimeError(
+            'a valid Python virtualenv does not exist at {}'.format(venv_path)
+        )
+
     return run_pexpect(args, cwd, env, logfile,
                        expect_passwords=expect_passwords,
                        idle_timeout=idle_timeout,
@@ -222,7 +231,11 @@ def handle_termination(pid, args, proot_cmd, is_cancel=True):
                       instance's cancel_flag.
     '''
     try:
-        if proot_cmd in ' '.join(args):
+        if sys.version_info > (3, 0):
+            used_proot = proot_cmd.encode('utf-8') in args
+        else:
+            used_proot = proot_cmd in ' '.join(args)
+        if used_proot:
             if not psutil:
                 os.kill(pid, signal.SIGKILL)
             else:
@@ -243,8 +256,8 @@ def handle_termination(pid, args, proot_cmd, is_cancel=True):
 
 
 def __run__(private_data_dir):
-    buff = cStringIO.StringIO()
-    with open(os.path.join(private_data_dir, 'env'), 'r') as f:
+    buff = StringIO()
+    with codecs.open(os.path.join(private_data_dir, 'env'), 'r', encoding='utf-8') as f:
         for line in f:
             buff.write(line)
 
@@ -271,12 +284,8 @@ def __run__(private_data_dir):
 
 
 if __name__ == '__main__':
-    __version__ = '3.2.0'
-    try:
-        import awx
-        __version__ = awx.__version__
-    except ImportError:
-        pass  # in devel, `awx` isn't an installed package
+    import awx
+    __version__ = awx.__version__
     parser = argparse.ArgumentParser(description='manage a daemonized, isolated ansible playbook')
     parser.add_argument('--version', action='version', version=__version__ + '-isolated')
     parser.add_argument('command', choices=['start', 'stop', 'is-alive'])

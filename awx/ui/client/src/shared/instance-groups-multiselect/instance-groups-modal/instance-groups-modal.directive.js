@@ -36,7 +36,7 @@ export default ['templateUrl', '$window', function(templateUrl, $window) {
                         page_size: 5
                     };
 
-                    qs.search(GetBasePath('instance_groups'), $scope.instance_groups_queryset)
+                    qs.search(GetBasePath('instance_groups'), $scope.instance_group_queryset)
                         .then(res => {
                             $scope.instance_group_dataset = res.data;
                             $scope.instance_groups = $scope.instance_group_dataset.results;
@@ -58,15 +58,21 @@ export default ['templateUrl', '$window', function(templateUrl, $window) {
                             let html = `${GenerateList.build({
                                 list: instanceGroupList,
                                 input_type: 'instance-groups-modal-body',
-                                hideViewPerPage: true
+                                hideViewPerPage: true,
+                                mode: 'lookup'
                             })}`;
 
                             $scope.list = instanceGroupList;
                             $('#instance-groups-modal-body').append($compile(html)($scope));
 
                             if ($scope.instanceGroups) {
-                                $scope.instance_groups.map( (item) => {
-                                    isSelected(item);
+                                $scope.instanceGroups = $scope.instanceGroups.map( (item) => {
+                                    item.isSelected = true;
+                                    if (!$scope.igTags) {
+                                        $scope.igTags = [];
+                                    }
+                                    $scope.igTags.push(item);
+                                    return item;
                                 });
                             }
 
@@ -82,21 +88,9 @@ export default ['templateUrl', '$window', function(templateUrl, $window) {
                             });
                         });
                     });
-
             }
 
             init();
-
-            function isSelected(item) {
-                if(_.find($scope.instanceGroups, {id: item.id})){
-                    item.isSelected = true;
-                    if (!$scope.igTags) {
-                        $scope.igTags = [];
-                    }
-                    $scope.igTags.push(item);
-                }
-                return item;
-            }
 
             $scope.$on("selectedOrDeselected", function(e, value) {
                 let item = value.value;

@@ -18,16 +18,17 @@ const LANGUAGES_PATH = path.join(CLIENT_PATH, 'languages');
 const MODELS_PATH = path.join(LIB_PATH, 'models');
 const NODE_MODULES_PATH = path.join(UI_PATH, 'node_modules');
 const SERVICES_PATH = path.join(LIB_PATH, 'services');
-const SOURCE_PATH = path.join(CLIENT_PATH, 'src');
+const SRC_PATH = path.join(CLIENT_PATH, 'src');
 const STATIC_PATH = path.join(UI_PATH, 'static');
+const TEST_PATH = path.join(UI_PATH, 'test');
 const THEME_PATH = path.join(LIB_PATH, 'theme');
 
-const APP_ENTRY = path.join(SOURCE_PATH, 'app.js');
-const VENDOR_ENTRY = path.join(SOURCE_PATH, 'vendor.js');
+const APP_ENTRY = path.join(SRC_PATH, 'app.js');
+const VENDOR_ENTRY = path.join(SRC_PATH, 'vendor.js');
 const INDEX_ENTRY = path.join(CLIENT_PATH, 'index.template.ejs');
 const INDEX_OUTPUT = path.join(UI_PATH, 'templates/ui/index.html');
 const THEME_ENTRY = path.join(LIB_PATH, 'theme', 'index.less');
-const OUTPUT = 'js/[name].[hash].js';
+const OUTPUT = 'js/[name].[chunkhash].js';
 const CHUNKS = ['vendor', 'app'];
 
 const VENDOR = VENDOR_ENTRY;
@@ -49,13 +50,24 @@ const base = {
         chunks: false,
         excludeAssets: name => {
             const chunkNames = `(${CHUNKS.join('|')})`;
-            const outputPattern = new RegExp(`${chunkNames}\.[a-f0-9]+\.(js|css)$`, 'i');
+            const outputPattern = new RegExp(`${chunkNames}.[a-f0-9]+.(js|css)(|.map)$`, 'i');
 
             return !outputPattern.test(name);
         }
     },
     module: {
         rules: [
+            {
+                test: /\.js$/,
+                use: {
+                    loader: 'istanbul-instrumenter-loader',
+                    options: { esModules: true }
+                },
+                enforce: 'pre',
+                include: [
+                    /src\/network-ui\//
+                ]
+            },
             {
                 test: /\.js$/,
                 loader: 'babel-loader',
@@ -82,28 +94,27 @@ const base = {
                 })
             },
             {
-                test: /\lib\/theme\/index.less$/,
+                test: /lib\/theme\/index.less$/,
                 use: ExtractTextPlugin.extract({
                     use: ['css-loader', 'less-loader']
                 })
-            },
-            {
-                test: require.resolve('jquery'),
-                loader: 'expose-loader?$!expose-loader?jQuery!expose-loader?jquery'
-            },
-            {
-                loader: 'script-loader',
-                test: [
-                    /node_modules\/javascript-detect-element-resize\/jquery.resize\.js$/,
-                    /node_modules\/d3\/d3\.min.js$/
-                ]
             },
             {
                 test: /\.html$/,
                 use: ['ngtemplate-loader', 'html-loader'],
                 include: [
                     /lib\/components\//,
-                    /features\//
+                    /features\//,
+                    /src\//
+                ]
+            },
+            {
+                test: /\.svg$/,
+                use: ['ngtemplate-loader', 'html-loader'],
+                include: [
+                    /lib\/components\//,
+                    /features\//,
+                    /src\//
                 ]
             },
             {
@@ -117,11 +128,10 @@ const base = {
         new webpack.ProvidePlugin({
             jsyaml: 'js-yaml',
             CodeMirror: 'codemirror',
-            jsonlint: 'codemirror.jsonlint',
-            _: 'lodash'
+            jsonlint: 'codemirror.jsonlint'
         }),
-        new ExtractTextPlugin('css/[name].[hash].css'),
-        new CleanWebpackPlugin([STATIC_PATH, COVERAGE_PATH, LANGUAGES_PATH], {
+        new ExtractTextPlugin('css/[name].[chunkhash].css'),
+        new CleanWebpackPlugin([STATIC_PATH, COVERAGE_PATH], {
             root: UI_PATH,
             verbose: false
         }),
@@ -161,17 +171,17 @@ const base = {
                 context: NODE_MODULES_PATH
             },
             {
-                from: path.join(SOURCE_PATH, '**/*.partial.html'),
+                from: path.join(SRC_PATH, '**/*.partial.html'),
                 to: path.join(STATIC_PATH, 'partials/'),
-                context: SOURCE_PATH
+                context: SRC_PATH
             },
             {
-                from: path.join(SOURCE_PATH, 'partials', '*.html'),
+                from: path.join(SRC_PATH, 'partials', '*.html'),
                 to: STATIC_PATH,
-                context: SOURCE_PATH
+                context: SRC_PATH
             },
             {
-                from: path.join(SOURCE_PATH, '*config.js'),
+                from: path.join(SRC_PATH, '*config.js'),
                 to: STATIC_PATH,
                 flatten: true
             }
@@ -182,35 +192,32 @@ const base = {
             filename: INDEX_OUTPUT,
             inject: false,
             chunks: CHUNKS,
-            chunksSortMode: (chunk) => {
-                if (chunk.names[0] === 'polyfill' || chunk.names[0] === 'vendor') {
-                    return -1;
-                }
-
-                return 1;
-            }
+            chunksSortMode: chunk => (chunk.names[0] === 'vendor' ? -1 : 1)
         })
     ],
     resolve: {
         alias: {
+            '~assets': ASSETS_PATH,
+            '~components': COMPONENTS_PATH,
             '~features': FEATURES_PATH,
             '~models': MODELS_PATH,
+            '~node_modules': NODE_MODULES_PATH,
             '~services': SERVICES_PATH,
-            '~components': COMPONENTS_PATH,
+            '~src': SRC_PATH,
+            '~test': TEST_PATH,
             '~theme': THEME_PATH,
-            '~modules': NODE_MODULES_PATH,
-            '~assets': ASSETS_PATH,
-            d3$: '~modules/d3/d3.min.js',
-            'codemirror.jsonlint$': '~modules/codemirror/addon/lint/json-lint.js',
-            'jquery-resize$': '~modules/javascript-detect-element-resize/jquery.resize.js',
-            select2$: '~modules/select2/dist/js/select2.full.min.js',
-            'js-yaml$': '~modules/js-yaml/dist/js-yaml.min.js',
-            'lr-infinite-scroll$': '~modules/lr-infinite-scroll/lrInfiniteScroll.js',
-            'angular-ui-router$': '~modules/angular-ui-router/release/angular-ui-router.js',
-            'angular-ui-router-state-events$': '~modules/angular-ui-router/release/stateEvents.js',
-            'ng-toast-provider$': '~modules/ng-toast/src/scripts/provider.js',
-            'ng-toast-directives$': '~modules/ng-toast/src/scripts/directives.js',
-            'ng-toast$': '~modules/ng-toast/src/scripts/module.js'
+            '~ui': UI_PATH,
+            d3$: '~node_modules/d3/d3.min.js',
+            'codemirror.jsonlint$': '~node_modules/codemirror/addon/lint/json-lint.js',
+            jquery: '~node_modules/jquery/dist/jquery.js',
+            'jquery-resize$': '~node_modules/javascript-detect-element-resize/jquery.resize.js',
+            select2$: '~node_modules/select2/dist/js/select2.full.min.js',
+            'js-yaml$': '~node_modules/js-yaml/dist/js-yaml.min.js',
+            'lr-infinite-scroll$': '~node_modules/lr-infinite-scroll/lrInfiniteScroll.js',
+            'angular-tz-extensions$': '~node_modules/angular-tz-extensions/lib/angular-tz-extensions.js',
+            'ng-toast-provider$': '~node_modules/ng-toast/src/scripts/provider.js',
+            'ng-toast-directives$': '~node_modules/ng-toast/src/scripts/directives.js',
+            'ng-toast$': '~node_modules/ng-toast/src/scripts/module.js'
         }
     }
 };

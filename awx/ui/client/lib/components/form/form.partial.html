@@ -1,8 +1,6 @@
 <div>
-    <form>
-        <div class="row">
-            <ng-transclude></ng-transclude> 
-        </div>
+    <form ng-attr-autocomplete="{{::autocomplete || undefined }}">
+        <ng-transclude class="row"></ng-transclude>
     </form>
 
     <at-modal></at-modal>

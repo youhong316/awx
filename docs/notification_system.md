@@ -36,10 +36,12 @@ The currently defined Notification Types are:
 * Slack
 * Hipchat
 * Mattermost
+* Rocket.Chat
 * Pagerduty
 * Twilio
 * IRC
 * Webhook
+* Grafana
 
 Each of these have their own configuration and behavioral semantics and testing them may need to be approached in different ways.   The following sections will give as much detail as possible.
 
@@ -124,7 +126,27 @@ In order to enable these settings in Mattermost:
 ### Test Service
 
 * Utilize an existing Mattermost installation or use their docker container here: `docker run --name mattermost-preview -d --publish 8065:8065 mattermost/mattermost-preview`
-* Turn on Incoming Webhooks and optionally allow Integrations to override usernames and icons in the System Console. 
+* Turn on Incoming Webhooks and optionally allow Integrations to override usernames and icons in the System Console.
+
+## Rocket.Chat
+
+The Rocket.Chat notification integration uses Incoming Webhooks. A password is not required because the webhook URL itself is the secret. An integration must be created in the Administration section of the Rocket.Chat settings.
+
+The following fields are available for the Rocket.Chat notification type:
+* `url`: The incoming webhook URL that was configured in Rocket.Chat. Notifications will use this URL to POST.
+* `username`: Optional. Change the displayed username from Rocket Cat to specified username
+* `icon_url`: Optional. A URL pointing to an icon to use for the notification.
+
+### Testing considerations
+
+* Make sure that all options behave as expected
+* Test that all notification options are obeyed
+
+### Test Service
+
+* Utilize an existing Rocket.Chat installation or use their docker containers from https://rocket.chat/docs/installation/docker-containers/
+* Create an Incoming Webhook in the Integrations section of the Administration settings
+
 
 ## Pagerduty
 
@@ -210,3 +232,32 @@ Note that this won't respond correctly to the notification so it will yield an e
 https://gist.github.com/matburt/73bfbf85c2443f39d272
 
 This demonstrates how to define an endpoint and parse headers and json content, it doesn't show configuring Flask for HTTPS but this is also pretty straightforward: http://flask.pocoo.org/snippets/111/
+
+
+## Grafana
+
+The Grafana notification type allows you to create Grafana annotations, Details about this feature of Grafana are available at http://docs.grafana.org/reference/annotations/. In order to allow Tower to add annotations an API Key needs to be created in Grafana. Note that the created annotations are region events with start and endtime of the associated Tower Job. The annotation description is also provided by the subject of the associated Tower Job, e.g.:
+```
+Job #1 'Ping Macbook' succeeded: https://towerhost/#/jobs/playbook/1
+```
+
+The configurable options of the Grafana notification type are:
+* `Grafana URL`: The base URL of the Grafana server (required). **Note**: the /api/annotations endpoint will be added automatically to the base Grafana URL.
+* `API Key`: The Grafana API Key to authenticate (required)
+* `ID of the Dashboard`: To create annotations in a specific Grafana dashboard enter the ID of the dashboard (optional).
+* `ID of the Panel`: To create annotations in a specific Panel enter the ID of the panel (optional).
+**Note**: If neither dashboardId nor panelId are provided then a global annotation is created and can be queried in any dashboard that adds the Grafana annotations data source.
+* `Annotations tags`: List of tags to add to the annotation. One tag per line.
+* `Disable SSL Verification`: Disable the verification of the ssl certificate, e.g. when using a self-signed SSL certificate for Grafana.
+
+### Test Considerations
+
+* Make sure that all options behave as expected
+* Test that all notification options are obeyed
+* e.g. Make sure the annotation gets created on the desired dashboard and/or panel and with the configured tags
+
+### Test Service
+* Utilize an existing Grafana installation or use their docker containers from http://docs.grafana.org/installation/docker/
+* Create an API Key in the Grafana configuration settings
+* (Optional) Lookup dashboardId and/or panelId if needed
+* (Optional) define tags for the annotation

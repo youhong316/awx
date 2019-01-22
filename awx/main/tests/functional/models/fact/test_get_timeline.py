@@ -1,6 +1,7 @@
 import pytest
 
 from datetime import timedelta
+
 from django.utils import timezone
 
 from awx.main.models import Fact
@@ -19,7 +20,7 @@ def setup_common(hosts, fact_scans, ts_from=None, ts_to=None, epoch=timezone.now
                 continue
             facts_known.append(f)
     fact_objs = Fact.get_timeline(hosts[0].id, module=module_name, ts_from=ts_from, ts_to=ts_to)
-    return (facts_known, fact_objs) 
+    return (facts_known, fact_objs)
 
 
 @pytest.mark.django_db
@@ -27,7 +28,7 @@ def test_all(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     epoch = timezone.now()
     ts_from = epoch - timedelta(days=1)
     ts_to = epoch + timedelta(days=10)
-    
+
     (facts_known, fact_objs) = setup_common(hosts, fact_scans, ts_from, ts_to, module_name=None, epoch=epoch)
     assert 9 == len(facts_known)
     assert 9 == len(fact_objs)
@@ -43,7 +44,7 @@ def test_all_ansible(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save)
     assert 3 == len(facts_known)
     assert 3 == len(fact_objs)
 
-    for i in xrange(len(facts_known) - 1, 0):
+    for i in range(len(facts_known) - 1, 0):
         assert facts_known[i].id == fact_objs[i].id
 
 
@@ -53,7 +54,7 @@ def test_empty_db(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     epoch = timezone.now()
     ts_from = epoch - timedelta(days=1)
     ts_to = epoch + timedelta(days=10)
-    
+
     fact_objs = Fact.get_timeline(hosts[0].id, 'ansible', ts_from, ts_to)
 
     assert 0 == len(fact_objs)
@@ -64,7 +65,7 @@ def test_no_results(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     epoch = timezone.now()
     ts_from = epoch - timedelta(days=100)
     ts_to = epoch - timedelta(days=50)
-    
+
     (facts_known, fact_objs) = setup_common(hosts, fact_scans, ts_from, ts_to, epoch=epoch)
     assert 0 == len(fact_objs)
 
@@ -101,12 +102,12 @@ def test_to_lte(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     ts_to = epoch + timedelta(days=1)
 
     (facts_known, fact_objs) = setup_common(hosts, fact_scans, ts_from=None, ts_to=ts_to, epoch=epoch)
-    facts_known_subset = filter(lambda x: x.timestamp <= ts_to, facts_known)
+    facts_known_subset = list(filter(lambda x: x.timestamp <= ts_to, facts_known))
 
     assert 2 == len(facts_known_subset)
     assert 2 == len(fact_objs)
 
-    for i in xrange(0, len(fact_objs)):
+    for i in range(0, len(fact_objs)):
         assert facts_known_subset[len(facts_known_subset) - i - 1].id == fact_objs[i].id
 
 
@@ -116,12 +117,12 @@ def test_from_gt(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     ts_from = epoch
 
     (facts_known, fact_objs) = setup_common(hosts, fact_scans, ts_from=ts_from, ts_to=None, epoch=epoch)
-    facts_known_subset = filter(lambda x: x.timestamp > ts_from, facts_known)
+    facts_known_subset = list(filter(lambda x: x.timestamp > ts_from, facts_known))
 
     assert 2 == len(facts_known_subset)
     assert 2 == len(fact_objs)
 
-    for i in xrange(0, len(fact_objs)):
+    for i in range(0, len(fact_objs)):
         assert facts_known_subset[len(facts_known_subset) - i - 1].id == fact_objs[i].id
 
 
@@ -133,5 +134,5 @@ def test_no_ts(hosts, fact_scans, monkeypatch_jsonbfield_get_db_prep_save):
     assert 3 == len(facts_known)
     assert 3 == len(fact_objs)
 
-    for i in xrange(len(facts_known) - 1, 0):
+    for i in range(len(facts_known) - 1, 0):
         assert facts_known[i].id == fact_objs[i].id

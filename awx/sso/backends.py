@@ -6,6 +6,7 @@ import logging
 import uuid
 
 import ldap
+import six
 
 # Django
 from django.dispatch import receiver
@@ -17,6 +18,7 @@ from django.core.signals import setting_changed
 from django_auth_ldap.backend import LDAPSettings as BaseLDAPSettings
 from django_auth_ldap.backend import LDAPBackend as BaseLDAPBackend
 from django_auth_ldap.backend import populate_user
+from django.core.exceptions import ImproperlyConfigured
 
 # radiusauth
 from radiusauth.backends import RADIUSBackend as BaseRADIUSBackend
@@ -25,9 +27,9 @@ from radiusauth.backends import RADIUSBackend as BaseRADIUSBackend
 import tacacs_plus
 
 # social
-from social.backends.saml import OID_USERID
-from social.backends.saml import SAMLAuth as BaseSAMLAuth
-from social.backends.saml import SAMLIdentityProvider as BaseSAMLIdentityProvider
+from social_core.backends.saml import OID_USERID
+from social_core.backends.saml import SAMLAuth as BaseSAMLAuth
+from social_core.backends.saml import SAMLIdentityProvider as BaseSAMLIdentityProvider
 
 # Ansible Tower
 from awx.conf.license import feature_enabled
@@ -38,10 +40,11 @@ logger = logging.getLogger('awx.sso.backends')
 
 class LDAPSettings(BaseLDAPSettings):
 
-    defaults = dict(BaseLDAPSettings.defaults.items() + {
+    defaults = dict(list(BaseLDAPSettings.defaults.items()) + list({
         'ORGANIZATION_MAP': {},
         'TEAM_MAP': {},
-    }.items())
+        'GROUP_TYPE_PARAMS': {},
+    }.items()))
 
     def __init__(self, prefix='AUTH_LDAP_', defaults={}):
         super(LDAPSettings, self).__init__(prefix, defaults)
@@ -65,9 +68,6 @@ class LDAPBackend(BaseLDAPBackend):
         self._dispatch_uid = uuid.uuid4()
         super(LDAPBackend, self).__init__(*args, **kwargs)
         setting_changed.connect(self._on_setting_changed, dispatch_uid=self._dispatch_uid)
-
-    def __del__(self):
-        setting_changed.disconnect(dispatch_uid=self._dispatch_uid)
 
     def _on_setting_changed(self, sender, **kwargs):
         # If any AUTH_LDAP_* setting changes, force settings to be reloaded for
@@ -104,8 +104,17 @@ class LDAPBackend(BaseLDAPBackend):
                 return None
         except User.DoesNotExist:
             pass
+
         try:
-            return super(LDAPBackend, self).authenticate(username, password)
+            for setting_name, type_ in [
+                ('GROUP_SEARCH', 'LDAPSearch'),
+                ('GROUP_TYPE', 'LDAPGroupType'),
+            ]:
+                if getattr(self.settings, setting_name) is None:
+                    raise ImproperlyConfigured(
+                        "{} must be an {} instance.".format(setting_name, type_)
+                    )
+            return super(LDAPBackend, self).authenticate(None, username, password)
         except Exception:
             logger.exception("Encountered an error authenticating to LDAP")
             return None
@@ -133,11 +142,30 @@ class LDAPBackend(BaseLDAPBackend):
         return set()
 
 
+class LDAPBackend1(LDAPBackend):
+    settings_prefix = 'AUTH_LDAP_1_'
+
+
+class LDAPBackend2(LDAPBackend):
+    settings_prefix = 'AUTH_LDAP_2_'
+
+
+class LDAPBackend3(LDAPBackend):
+    settings_prefix = 'AUTH_LDAP_3_'
+
+
+class LDAPBackend4(LDAPBackend):
+    settings_prefix = 'AUTH_LDAP_4_'
+
+
+class LDAPBackend5(LDAPBackend):
+    settings_prefix = 'AUTH_LDAP_5_'
+
+
 def _decorate_enterprise_user(user, provider):
     user.set_unusable_password()
     user.save()
-    enterprise_auth = UserEnterpriseAuth(user=user, provider=provider)
-    enterprise_auth.save()
+    enterprise_auth, _ = UserEnterpriseAuth.objects.get_or_create(user=user, provider=provider)
     return enterprise_auth
 
 
@@ -161,13 +189,13 @@ class RADIUSBackend(BaseRADIUSBackend):
     Custom Radius backend to verify license status
     '''
 
-    def authenticate(self, username, password):
+    def authenticate(self, username, password):    
         if not django_settings.RADIUS_SERVER:
             return None
         if not feature_enabled('enterprise_auth'):
             logger.error("Unable to authenticate, license does not support RADIUS authentication")
             return None
-        return super(RADIUSBackend, self).authenticate(username, password)
+        return super(RADIUSBackend, self).authenticate(None, username, password)
 
     def get_user(self, user_id):
         if not django_settings.RADIUS_SERVER:
@@ -197,16 +225,16 @@ class TACACSPlusBackend(object):
         try:
             # Upstream TACACS+ client does not accept non-string, so convert if needed.
             auth = tacacs_plus.TACACSClient(
-                django_settings.TACACSPLUS_HOST.encode('utf-8'),
+                django_settings.TACACSPLUS_HOST,
                 django_settings.TACACSPLUS_PORT,
-                django_settings.TACACSPLUS_SECRET.encode('utf-8'),
+                django_settings.TACACSPLUS_SECRET,
                 timeout=django_settings.TACACSPLUS_SESSION_TIMEOUT,
             ).authenticate(
-                username.encode('utf-8'), password.encode('utf-8'),
+                username, password,
                 authen_type=tacacs_plus.TAC_PLUS_AUTHEN_TYPES[django_settings.TACACSPLUS_AUTH_PROTOCOL],
             )
         except Exception as e:
-            logger.exception("TACACS+ Authentication Error: %s" % (e.message,))
+            logger.exception("TACACS+ Authentication Error: %s" % str(e))
             return None
         if auth.valid:
             return _get_or_set_enterprise_user(username, password, 'tacacs+')
@@ -230,7 +258,7 @@ class TowerSAMLIdentityProvider(BaseSAMLIdentityProvider):
 
     def get_user_permanent_id(self, attributes):
         uid = attributes[self.conf.get('attr_user_permanent_id', OID_USERID)]
-        if isinstance(uid, basestring):
+        if isinstance(uid, six.string_types):
             return uid
         return uid[0]
 
@@ -242,13 +270,14 @@ class TowerSAMLIdentityProvider(BaseSAMLIdentityProvider):
         """
         key = self.conf.get(conf_key, default_attribute)
         value = attributes[key] if key in attributes else None
-        if isinstance(value, list):
+        # In certain implementations (like https://pagure.io/ipsilon) this value is a string, not a list
+        if isinstance(value, (list, tuple)):
             value = value[0]
         if conf_key in ('attr_first_name', 'attr_last_name', 'attr_username', 'attr_email') and value is None:
             logger.warn("Could not map user detail '%s' from SAML attribute '%s'; "
                         "update SOCIAL_AUTH_SAML_ENABLED_IDPS['%s']['%s'] with the correct SAML attribute.",
                         conf_key[5:], key, self.name, conf_key)
-        return unicode(value) if value is not None else value
+        return six.text_type(value) if value is not None else value
 
 
 class SAMLAuth(BaseSAMLAuth):
@@ -269,16 +298,12 @@ class SAMLAuth(BaseSAMLAuth):
         if not feature_enabled('enterprise_auth'):
             logger.error("Unable to authenticate, license does not support SAML authentication")
             return None
-        created = False
-        try:
-            user = User.objects.get(username=kwargs.get('username', ''))
-            if user and not user.is_in_enterprise_category('saml'):
-                return None
-        except User.DoesNotExist:
-            created = True
         user = super(SAMLAuth, self).authenticate(*args, **kwargs)
-        if user and created:
+        # Comes from https://github.com/omab/python-social-auth/blob/v0.2.21/social/backends/base.py#L91
+        if getattr(user, 'is_new', False):
             _decorate_enterprise_user(user, 'saml')
+        elif user and not user.is_in_enterprise_category('saml'):
+            return None
         return user
 
     def get_user(self, user_id):
@@ -305,16 +330,18 @@ def _update_m2m_from_groups(user, ldap_user, rel, opts, remove=True):
     elif opts is True:
         should_add = True
     else:
-        if isinstance(opts, basestring):
+        if isinstance(opts, six.string_types):
             opts = [opts]
         for group_dn in opts:
-            if not isinstance(group_dn, basestring):
+            if not isinstance(group_dn, six.string_types):
                 continue
             if ldap_user._get_groups().is_member_of(group_dn):
                 should_add = True
     if should_add:
+        user.save()
         rel.add(user)
-    elif remove:
+    elif remove and user in rel.all():
+        user.save()
         rel.remove(user)
 
 
@@ -332,6 +359,16 @@ def on_populate_user(sender, **kwargs):
     # Prefetch user's groups to prevent LDAP queries for each org/team when
     # checking membership.
     ldap_user._get_groups().get_group_dns()
+
+    # If the LDAP user has a first or last name > $maxlen chars, truncate it
+    for field in ('first_name', 'last_name'):
+        max_len = User._meta.get_field(field).max_length
+        field_len = len(getattr(user, field))
+        if field_len > max_len:
+            setattr(user, field, getattr(user, field)[:max_len])
+            logger.warn(six.text_type(
+                'LDAP user {} has {} > max {} characters'
+            ).format(user.username, field, max_len))
 
     # Update organization membership based on group memberships.
     org_map = getattr(backend.settings, 'ORGANIZATION_MAP', {})
@@ -360,6 +397,7 @@ def on_populate_user(sender, **kwargs):
                                 remove)
 
     # Update user profile to store LDAP DN.
+    user.save()
     profile = user.profile
     if profile.ldap_dn != ldap_user.dn:
         profile.ldap_dn = ldap_user.dn
